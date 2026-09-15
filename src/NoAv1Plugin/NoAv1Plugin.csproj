@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>NoAv1Plugin</AssemblyName>
+    <Version>1.0.0</Version>
+
+    <!-- Build as a plugin assembly. To build outside the Jellyfin repo you may need
+         to reference Jellyfin assemblies manually or build inside the Jellyfin source tree. -->
+  </PropertyGroup>
+
+  <!-- ProjectReferences left out intentionally. Build inside Jellyfin source tree or
+       reference server DLLs when building externally. -->
+</Project>

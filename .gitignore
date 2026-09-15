@@ -1,0 +1,34 @@
+# Visual Studio / dotnet
+bin/
+obj/
+*.user
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# macOS
+.DS_Store
+
+# Vim swap/undo
+*.swp
+*.swo
+*.un~
+
+# Editor temp files
+*~
+
+# Build output
+out/
+noav1-1.0.0.zip
+
+# Logs
+*.log
+
+# Container artifacts
+*.tar
+
+# Ignore local secrets/config
+.env
