@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using Jellyfin.Data.Enums;
+using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
@@ -14,7 +16,7 @@ namespace NoAv1Plugin
 {
     public class Plugin : BasePlugin<PluginConfiguration>
     {
-        public static Plugin Instance { get; private set; }
+        public static Plugin Instance { get; private set; } = null!;
 
         private readonly ISessionManager _sessionManager;
         private readonly IDeviceManager _deviceManager;
@@ -34,7 +36,6 @@ namespace NoAv1Plugin
         {
             Instance = this;
             _sessionManager = sessionManager;
-            _device_manager = deviceManager; // fallback if different casing
             _deviceManager = deviceManager;
             _logger = logger;
 
@@ -134,12 +135,12 @@ namespace NoAv1Plugin
                 },
                 CodecProfiles = new[]
                 {
-                    new CodecProfile { Type = DlnaProfileType.Video, Codec = "h264" },
-                    new CodecProfile { Type = DlnaProfileType.Video, Codec = "hevc" }
+                    new CodecProfile { Type = CodecType.Video, Codec = "h264" },
+                    new CodecProfile { Type = CodecType.Video, Codec = "hevc" }
                 },
                 TranscodingProfiles = new[]
                 {
-                    new TranscodingProfile { Container = "mp4", Type = "Video", VideoCodec = "h264", AudioCodec = "aac", Protocol = "http" }
+                    new TranscodingProfile { Container = "mp4", Type = DlnaProfileType.Video, VideoCodec = "h264", AudioCodec = "aac", Protocol = MediaStreamProtocol.http }
                 }
             };
 
