@@ -20,6 +20,8 @@
                     #NoAv1ConfigPage .fieldDescription { opacity: 0.7; font-size: 0.85em; margin-top: 0.2em; }
                     #NoAv1ConfigPage .noAv1RowButtons button { margin-right: 0.4em; }
                     #NoAv1ConfigPage .noAv1FormRow { margin-bottom: 1.2em; }
+                    #NoAv1ConfigPage .noAv1LogContent { display: none; width: 100%; max-width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.8em; margin-top: 0.5em; white-space: pre; }
+                    #NoAv1ConfigPage option.noAv1LogSuggested { font-weight: bold; }
                 </style>
 
                 <form id="NoAv1ConfigForm">
@@ -54,6 +56,22 @@
                                 supporting. Leave unselected to build a rule from app/device-name patterns instead.
                             </div>
                             <div id="noAv1DeviceNote" class="noAv1DeviceNote"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1LogFilter">Client debug logs</label>
+                            <input is="emby-input" type="text" id="noAv1LogFilter" placeholder="Filter by app name, version, or filename..." />
+                            <div class="fieldDescription">
+                                Logs uploaded via a client's "Send Logs" feature. Their filenames don't include a
+                                device ID, so this can't <em>confirm</em> which device a log came from — picking a
+                                known device above pre-fills this filter with its app name and marks the log
+                                closest in time to that device's last activity as a suggested match.
+                            </div>
+                            <select id="noAv1LogSelect" is="emby-select" style="width:100%;max-width:44em;" size="6"></select>
+                            <div>
+                                <button is="emby-button" type="button" class="raised" id="noAv1LoadLogButton">Load selected log</button>
+                            </div>
+                            <textarea id="noAv1LogContent" class="noAv1LogContent" readonly rows="14"></textarea>
                         </div>
 
                         <div class="noAv1FormRow">
@@ -126,7 +144,8 @@
                 devices: [],
                 videoCodecs: [],
                 audioCodecs: [],
-                editingIndex: -1
+                editingIndex: -1,
+                logs: []
             };
 
             function byId(id) {
@@ -240,6 +259,8 @@
                     byId('noAv1DeviceId').value = '';
                     noteEl.textContent = '';
                     resetCodecAvailability();
+                    byId('noAv1LogFilter').value = '';
+                    renderLogList('', null);
                     return;
                 }
 
@@ -249,6 +270,8 @@
                 if (!device) {
                     noteEl.textContent = '';
                     resetCodecAvailability();
+                    byId('noAv1LogFilter').value = '';
+                    renderLogList('', null);
                     return;
                 }
 
@@ -260,6 +283,110 @@
 
                 setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
                 setCodecAvailability('noAv1AudioCodecGroup', device.ClaimedAudioCodecs, device.HasReportedProfile);
+
+                // Log filenames carry no device ID, so this is a best-effort suggestion only
+                // (same app name, closest reported activity time) -- never a confirmed match.
+                var suggestedLog = findSuggestedLog(device);
+                var filterText = device.AppName || '';
+                byId('noAv1LogFilter').value = filterText;
+                renderLogList(filterText, suggestedLog);
+            }
+
+            function findSuggestedLog(device) {
+                if (!device || !device.AppName) {
+                    return null;
+                }
+
+                var appName = device.AppName.toLowerCase();
+                var candidates = state.logs.filter(function (log) {
+                    return log.ClientName && log.ClientName.toLowerCase().indexOf(appName) !== -1;
+                });
+
+                if (!candidates.length) {
+                    return null;
+                }
+
+                if (!device.DateLastActivity) {
+                    return candidates[0];
+                }
+
+                var targetTime = new Date(device.DateLastActivity).getTime();
+                var best = null;
+                var bestDelta = Infinity;
+                candidates.forEach(function (log) {
+                    if (!log.Timestamp) {
+                        return;
+                    }
+                    var delta = Math.abs(new Date(log.Timestamp).getTime() - targetTime);
+                    if (delta < bestDelta) {
+                        bestDelta = delta;
+                        best = log;
+                    }
+                });
+
+                return best || candidates[0];
+            }
+
+            function formatLogOptionLabel(log) {
+                var when = log.Timestamp ? new Date(log.Timestamp).toLocaleString() : 'unknown time';
+                var size = log.SizeBytes ? ' (' + Math.round(log.SizeBytes / 1024) + ' KB)' : '';
+                return log.ClientName + ' v' + log.ClientVersion + ' — ' + when + size;
+            }
+
+            function renderLogList(filterText, suggested) {
+                var select = byId('noAv1LogSelect');
+                var filter = (filterText || '').toLowerCase();
+                select.innerHTML = '';
+
+                var filtered = state.logs.filter(function (log) {
+                    if (!filter) {
+                        return true;
+                    }
+                    var haystack = (log.ClientName + ' ' + log.ClientVersion + ' ' + log.FileName).toLowerCase();
+                    return haystack.indexOf(filter) !== -1;
+                });
+
+                filtered.forEach(function (log) {
+                    var opt = document.createElement('option');
+                    opt.value = log.FileName;
+                    var isSuggested = !!(suggested && suggested.FileName === log.FileName);
+                    opt.textContent = (isSuggested ? '★ ' : '') + formatLogOptionLabel(log);
+                    if (isSuggested) {
+                        opt.className = 'noAv1LogSuggested';
+                        opt.selected = true;
+                    }
+                    select.appendChild(opt);
+                });
+
+                if (!filtered.length) {
+                    var empty = document.createElement('option');
+                    empty.value = '';
+                    empty.textContent = filter ? 'No logs match that filter.' : 'No client debug logs uploaded yet.';
+                    empty.disabled = true;
+                    select.appendChild(empty);
+                }
+            }
+
+            function loadSelectedLog() {
+                var select = byId('noAv1LogSelect');
+                var fileName = select.value;
+                var contentEl = byId('noAv1LogContent');
+
+                if (!fileName) {
+                    Dashboard.alert('Select a log from the list first.');
+                    return;
+                }
+
+                Dashboard.showLoadingMsg();
+                apiGet('NoAv1/Logs/' + encodeURIComponent(fileName)).then(function (result) {
+                    contentEl.value = (result.Truncated ? '[log truncated to first ~2MB]\n\n' : '') + result.Content;
+                    contentEl.style.display = 'block';
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('NoAv1Plugin: failed to load log content', err);
+                    Dashboard.alert('Failed to load that log file. See browser console for details.');
+                });
             }
 
             function clearForm() {
@@ -271,6 +398,10 @@
                 byId('noAv1RemoteAddress').value = '';
                 byId('noAv1DeviceNote').textContent = '';
                 resetCodecAvailability();
+                byId('noAv1LogFilter').value = '';
+                byId('noAv1LogContent').value = '';
+                byId('noAv1LogContent').style.display = 'none';
+                renderLogList('', null);
                 // Default a fresh rule to the plugin's original H.264/HEVC + AAC/MP3 behavior.
                 setCheckedCodecs('noAv1VideoCodecGroup', ['h264', 'hevc']);
                 setCheckedCodecs('noAv1AudioCodecGroup', ['aac', 'mp3']);
@@ -410,12 +541,14 @@
                 Promise.all([
                     ApiClient.getPluginConfiguration(pluginUniqueId),
                     apiGet('NoAv1/Codecs'),
-                    apiGet('NoAv1/Devices')
+                    apiGet('NoAv1/Devices'),
+                    apiGet('NoAv1/Logs')
                 ]).then(function (results) {
                     state.config = results[0];
                     state.videoCodecs = results[1].VideoCodecs || [];
                     state.audioCodecs = results[1].AudioCodecs || [];
                     state.devices = results[2] || [];
+                    state.logs = results[3] || [];
 
                     renderCodecGroup('noAv1VideoCodecGroup', state.videoCodecs, 'video');
                     renderCodecGroup('noAv1AudioCodecGroup', state.audioCodecs, 'audio');
@@ -446,6 +579,10 @@
 
             pageEl.addEventListener('pageshow', loadPage);
             byId('noAv1DeviceSelect').addEventListener('change', onDeviceSelectChange);
+            byId('noAv1LogFilter').addEventListener('input', function () {
+                renderLogList(this.value, null);
+            });
+            byId('noAv1LoadLogButton').addEventListener('click', loadSelectedLog);
             byId('noAv1SaveRuleButton').addEventListener('click', saveRuleFromForm);
             byId('noAv1CancelEditButton').addEventListener('click', clearForm);
             byId('NoAv1ConfigForm').addEventListener('submit', saveConfig);

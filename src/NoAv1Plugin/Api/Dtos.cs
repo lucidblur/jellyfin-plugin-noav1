@@ -31,4 +31,31 @@ namespace NoAv1Plugin.Api
 
         public IReadOnlyCollection<string> ClaimedAudioCodecs { get; set; } = Array.Empty<string>();
     }
+
+    // A client debug log uploaded via the "Send Logs" feature in official apps (stored
+    // server-side as upload_{clientName}_{clientVersion}_{timestamp}_{guid}.log). The filename
+    // has no device ID in it, so FileName is the only reliable way to fetch one's content --
+    // ClientName/ClientVersion/Timestamp are a best-effort parse of the filename, used to let
+    // the admin UI suggest (not guarantee) which device a given log probably came from.
+    public class ClientLogFileDto
+    {
+        public string FileName { get; set; } = string.Empty;
+
+        public string ClientName { get; set; } = string.Empty;
+
+        public string ClientVersion { get; set; } = string.Empty;
+
+        public DateTime? Timestamp { get; set; }
+
+        public long SizeBytes { get; set; }
+    }
+
+    public class ClientLogContentDto
+    {
+        public string FileName { get; set; } = string.Empty;
+
+        public string Content { get; set; } = string.Empty;
+
+        public bool Truncated { get; set; }
+    }
 }
