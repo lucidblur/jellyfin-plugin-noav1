@@ -1,0 +1,4 @@
+[submodule "jellyfin"]
+	path = jellyfin
+	url = https://github.com/jellyfin/jellyfin.git
+	branch = v10.11.11
