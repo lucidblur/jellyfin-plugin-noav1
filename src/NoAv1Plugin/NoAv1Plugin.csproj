@@ -3,7 +3,14 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AssemblyName>NoAv1Plugin</AssemblyName>
-    <Version>1.0.0</Version>
+    <!-- Must stay a 4-part version, and must exactly match plugin.json's "version". The SDK
+         compiles this into a 4-part AssemblyVersion regardless (e.g. "1.0.0" here still
+         produces AssemblyVersion 1.0.0.0), and Jellyfin's web UI reads that compiled version
+         to build Disable/Uninstall/Enable API calls — but its actual plugin lookup compares
+         against Version.Parse(plugin.json's "version") string. "1.0.0" vs "1.0.0.0" parse to
+         *unequal* System.Version values (Revision -1 vs 0), so a mismatch here makes Jellyfin's
+         own Disable/Uninstall buttons 404 against a plugin it just listed as installed. -->
+    <Version>1.0.0.0</Version>
   </PropertyGroup>
 
   <!-- Built from within the Jellyfin source tree (see build/container-build.sh), so these
