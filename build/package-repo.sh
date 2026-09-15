@@ -10,9 +10,15 @@ set -euo pipefail
 #   ./build/package-repo.sh [BASE_URL]
 #
 # BASE_URL is the address the zip/manifest will be served from (default: http://localhost:8095).
-# It must be reachable from wherever the Jellyfin *server* actually runs: if the server is in a
-# separate container, "localhost" from this shell won't be reachable from inside it — use the
-# host's LAN IP, or host.docker.internal / host.containers.internal, instead.
+# It must be reachable from wherever the Jellyfin *server* actually runs, not just from this
+# shell: if Jellyfin runs in its own container (e.g. rootless Podman with pasta/slirp4netns
+# networking), "localhost" resolves to the *container's* loopback, not the host's, and the
+# repository will silently fail to fetch (no error in the UI — the plugin just never appears
+# in the catalog). Use:
+#   ./build/package-repo.sh http://host.containers.internal:8095   # Podman
+#   ./build/package-repo.sh http://host.docker.internal:8095       # Docker
+# or the host's LAN IP if neither hostname resolves inside the container. You can check what
+# actually works with: podman exec <container> curl -sf http://host.containers.internal:8095
 
 OUT_DIR=${OUT_DIR:-out/NoAv1Plugin}
 REPO_DIR=${REPO_DIR:-repo}
