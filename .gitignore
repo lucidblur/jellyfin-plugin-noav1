@@ -22,7 +22,8 @@ obj/
 
 # Build output
 out/
-noav1-1.0.0.zip
+repo/
+noav1-*.zip
 
 # Logs
 *.log

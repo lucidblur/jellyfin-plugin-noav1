@@ -54,4 +54,12 @@ fi
 echo 'Running dotnet publish...'
 dotnet publish "${DOTNET_PROJECT_PATH}" -c Release -o "/src/${OUT_DIR}"
 
+# `dotnet publish` also copies every transitive ProjectReference output (MediaBrowser.*,
+# Jellyfin.*, etc.) into OUT_DIR. Jellyfin's plugin loader puts every DLL found in a plugin's
+# folder into that plugin's own AssemblyLoadContext, so shipping copies of server assemblies
+# we merely build against would load a second, distinct set of those types alongside the
+# host's and break DI/type identity. Only the plugin's own assembly should ever be installed.
+echo 'Trimming publish output to only the plugin assembly...'
+find "/src/${OUT_DIR}" -maxdepth 1 -type f ! -name 'NoAv1Plugin.dll' ! -name 'NoAv1Plugin.pdb' -delete
+
 echo "Build complete. Published files are in /src/${OUT_DIR} inside the host workspace."

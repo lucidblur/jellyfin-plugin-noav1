@@ -7,7 +7,12 @@
   </PropertyGroup>
 
   <!-- Built from within the Jellyfin source tree (see build/container-build.sh), so these
-       relative paths resolve to the sibling Jellyfin server projects. -->
+       relative paths resolve to the sibling Jellyfin server projects. `dotnet publish` copies
+       these (and their transitive deps) into the output regardless of Private/copy-local
+       settings, so container-inner.sh prunes the publish output down to just NoAv1Plugin.dll
+       afterward — the server loads every DLL it finds in a plugin's folder into that plugin's
+       own isolated AssemblyLoadContext, so shipping copies of server assemblies would load a
+       second, distinct set of those types alongside the host's and break DI/type identity. -->
   <ItemGroup>
     <ProjectReference Include="../../../MediaBrowser.Common/MediaBrowser.Common.csproj" />
     <ProjectReference Include="../../../MediaBrowser.Controller/MediaBrowser.Controller.csproj" />
