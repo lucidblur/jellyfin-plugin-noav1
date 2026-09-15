@@ -32,11 +32,23 @@ fi
 
 NAME=$(jq -r '.name' "${PLUGIN_JSON}")
 GUID=$(jq -r '.guid' "${PLUGIN_JSON}")
-VERSION=$(jq -r '.version' "${PLUGIN_JSON}")
+SEMVER=$(jq -r '.version' "${PLUGIN_JSON}")
 DESCRIPTION=$(jq -r '.description' "${PLUGIN_JSON}")
 OWNER=$(jq -r '.owner' "${PLUGIN_JSON}")
 CATEGORY=$(jq -r '.category' "${PLUGIN_JSON}")
 TARGET_ABI=$(jq -r '.targetAbi' "${PLUGIN_JSON}")
+
+# plugin.json's "version" is plain SemVer 2.0 (MAJOR.MINOR.PATCH — no -prerelease or +build
+# metadata: Jellyfin's plugin system has no concept of either, it's just a .NET System.Version).
+# The csproj derives its <Version> from this same field, and the SDK pads a 3-part <Version>
+# into a 4-part AssemblyVersion (e.g. "1.0.0" -> 1.0.0.0). The repository manifest's version
+# must match that compiled AssemblyVersion exactly (see NoAv1Plugin.csproj for why), so apply
+# the identical padding here rather than requiring plugin.json to store the padded form.
+if ! [[ "${SEMVER}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: plugin.json's \"version\" (${SEMVER}) must be plain MAJOR.MINOR.PATCH — Jellyfin's plugin version has no room for a -prerelease or +build suffix." >&2
+  exit 2
+fi
+VERSION="${SEMVER}.0"
 
 mkdir -p "${REPO_DIR}"
 ZIP_NAME="noav1-${VERSION}.zip"

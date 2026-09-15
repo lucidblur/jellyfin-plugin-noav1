@@ -3,14 +3,19 @@
     <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AssemblyName>NoAv1Plugin</AssemblyName>
-    <!-- Must stay a 4-part version, and must exactly match plugin.json's "version". The SDK
-         compiles this into a 4-part AssemblyVersion regardless (e.g. "1.0.0" here still
-         produces AssemblyVersion 1.0.0.0), and Jellyfin's web UI reads that compiled version
-         to build Disable/Uninstall/Enable API calls — but its actual plugin lookup compares
-         against Version.Parse(plugin.json's "version") string. "1.0.0" vs "1.0.0.0" parse to
-         *unequal* System.Version values (Revision -1 vs 0), so a mismatch here makes Jellyfin's
-         own Disable/Uninstall buttons 404 against a plugin it just listed as installed. -->
-    <Version>1.0.0.0</Version>
+    <!-- plugin.json's "version" (a clean SemVer 2.0 MAJOR.MINOR.PATCH string) is the single
+         source of truth for the plugin's version — read it here instead of duplicating it, so
+         this assembly's compiled version can never drift out of sync with it again. The SDK
+         pads a 3-part <Version> into a 4-part AssemblyVersion (e.g. "1.0.0" -> 1.0.0.0), and
+         build/package-repo.sh applies that exact same padding when generating the repository
+         manifest's version. Jellyfin's web UI reads the compiled AssemblyVersion to build
+         Disable/Uninstall/Enable API calls, but the actual server-side plugin lookup compares
+         against Version.Parse(plugin.json's "version") — "1.0.0" vs "1.0.0.0" parse to
+         *unequal* System.Version values (Revision -1 vs 0), so any mismatch here makes
+         Jellyfin's own Disable/Uninstall buttons 404 against a plugin it just listed as
+         installed. Don't hand-edit this value; bump plugin.json's "version" instead. -->
+    <PluginManifestPath>$(MSBuildThisFileDirectory)plugin.json</PluginManifestPath>
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText($(PluginManifestPath))), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</Version>
   </PropertyGroup>
 
   <!-- Built from within the Jellyfin source tree (see build/container-build.sh), so these
