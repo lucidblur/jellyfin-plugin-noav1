@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using Jellyfin.Data.Enums;
 using MediaBrowser.Common.Configuration;
@@ -14,7 +16,7 @@ using MediaBrowser.Model.Session;
 
 namespace NoAv1Plugin
 {
-    public class Plugin : BasePlugin<PluginConfiguration>
+    public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         public static Plugin Instance { get; private set; } = null!;
 
@@ -41,6 +43,16 @@ namespace NoAv1Plugin
 
             // Subscribe to session started events
             _sessionManager.SessionStarted += OnSessionStarted;
+        }
+
+        public IEnumerable<PluginPageInfo> GetPages()
+        {
+            yield return new PluginPageInfo
+            {
+                Name = "NoAv1Plugin",
+                DisplayName = Name,
+                EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
+            };
         }
 
         private void OnSessionStarted(object? sender, MediaBrowser.Controller.Session.SessionEventArgs e)
@@ -73,7 +85,7 @@ namespace NoAv1Plugin
                 if (!string.IsNullOrWhiteSpace(rule.DeviceId) &&
                     string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
                 {
-                    ApplyOverride(session.DeviceId);
+                    ApplyOverride(session.DeviceId, rule);
                     return;
                 }
 
@@ -84,7 +96,7 @@ namespace NoAv1Plugin
                     {
                         if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
                         {
-                            ApplyOverride(session.DeviceId);
+                            ApplyOverride(session.DeviceId, rule);
                             return;
                         }
                     }
@@ -97,7 +109,7 @@ namespace NoAv1Plugin
                     {
                         if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
                         {
-                            ApplyOverride(session.DeviceId);
+                            ApplyOverride(session.DeviceId, rule);
                             return;
                         }
                     }
@@ -110,7 +122,7 @@ namespace NoAv1Plugin
                     {
                         if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
                         {
-                            ApplyOverride(session.DeviceId);
+                            ApplyOverride(session.DeviceId, rule);
                             return;
                         }
                     }
@@ -118,8 +130,17 @@ namespace NoAv1Plugin
             }
         }
 
-        private void ApplyOverride(string deviceId)
+        private static readonly string[] DefaultVideoCodecs = { "h264", "hevc" };
+        private static readonly string[] DefaultAudioCodecs = { "aac", "mp3" };
+
+        private void ApplyOverride(string deviceId, DeviceRule rule)
         {
+            var videoCodecs = rule.AllowedVideoCodecs is { Count: > 0 } ? rule.AllowedVideoCodecs.ToArray() : DefaultVideoCodecs;
+            var audioCodecs = rule.AllowedAudioCodecs is { Count: > 0 } ? rule.AllowedAudioCodecs.ToArray() : DefaultAudioCodecs;
+
+            var videoCodecList = string.Join(',', videoCodecs);
+            var audioCodecList = string.Join(',', audioCodecs);
+
             var deviceProfile = new DeviceProfile
             {
                 Name = "NoAV1-Override",
@@ -129,19 +150,25 @@ namespace NoAv1Plugin
                     {
                         Container = "mp4",
                         Type = DlnaProfileType.Video,
-                        VideoCodec = "h264,hevc", // exclude av1
-                        AudioCodec = "aac,mp3"
+                        VideoCodec = videoCodecList,
+                        AudioCodec = audioCodecList
                     }
                 },
-                CodecProfiles = new[]
-                {
-                    new CodecProfile { Type = CodecType.Video, Codec = "h264" },
-                    new CodecProfile { Type = CodecType.Video, Codec = "hevc" }
-                },
-                TranscodingProfiles = new[]
-                {
-                    new TranscodingProfile { Container = "mp4", Type = DlnaProfileType.Video, VideoCodec = "h264", AudioCodec = "aac", Protocol = MediaStreamProtocol.http }
-                }
+                CodecProfiles = videoCodecs
+                    .Select(codec => new CodecProfile { Type = CodecType.Video, Codec = codec })
+                    .ToArray(),
+                // One transcoding profile per allowed video codec, so the server can fall back to
+                // HEVC (or whichever codecs the rule allows) instead of always transcoding to H.264.
+                TranscodingProfiles = videoCodecs
+                    .Select(codec => new TranscodingProfile
+                    {
+                        Container = "mp4",
+                        Type = DlnaProfileType.Video,
+                        VideoCodec = codec,
+                        AudioCodec = audioCodecList,
+                        Protocol = MediaStreamProtocol.http
+                    })
+                    .ToArray()
             };
 
             var caps = new ClientCapabilities
@@ -152,7 +179,11 @@ namespace NoAv1Plugin
             try
             {
                 _deviceManager.SaveCapabilities(deviceId, caps);
-                _logger?.LogInformation("NoAv1Plugin: applied override for device {DeviceId}", deviceId);
+                _logger?.LogInformation(
+                    "NoAv1Plugin: applied override for device {DeviceId} (video: {VideoCodecs}; audio: {AudioCodecs})",
+                    deviceId,
+                    videoCodecList,
+                    audioCodecList);
             }
             catch (Exception ex)
             {

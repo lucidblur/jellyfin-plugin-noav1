@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>No AV1 Device Overrides</title>
+</head>
+<body>
+    <div id="NoAv1ConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+        <div data-role="content">
+            <div class="content-primary">
+                <style>
+                    #NoAv1ConfigPage .noAv1Section { margin-bottom: 2em; }
+                    #NoAv1ConfigPage .codecGroup { display: flex; flex-wrap: wrap; gap: 0.75em 1.5em; margin: 0.5em 0 1em; }
+                    #NoAv1ConfigPage .codecOption { display: flex; align-items: center; gap: 0.4em; }
+                    #NoAv1ConfigPage .codecOption.codecUnavailable { opacity: 0.4; }
+                    #NoAv1ConfigPage .codecOption label { cursor: pointer; }
+                    #NoAv1ConfigPage .codecOption.codecUnavailable label { cursor: not-allowed; }
+                    #NoAv1ConfigPage table.noAv1RulesTable { width: 100%; border-collapse: collapse; margin-top: 1em; }
+                    #NoAv1ConfigPage table.noAv1RulesTable th, #NoAv1ConfigPage table.noAv1RulesTable td { text-align: left; padding: 0.5em; border-bottom: 1px solid rgba(255,255,255,0.1); vertical-align: top; }
+                    #NoAv1ConfigPage .noAv1DeviceNote { font-size: 0.9em; opacity: 0.75; margin: 0.3em 0 0.8em; }
+                    #NoAv1ConfigPage .fieldDescription { opacity: 0.7; font-size: 0.85em; margin-top: 0.2em; }
+                    #NoAv1ConfigPage .noAv1RowButtons button { margin-right: 0.4em; }
+                    #NoAv1ConfigPage .noAv1FormRow { margin-bottom: 1.2em; }
+                </style>
+
+                <form id="NoAv1ConfigForm">
+                    <div class="verticalSection">
+                        <h1>No AV1 Device Overrides</h1>
+                        <p>
+                            Rules apply a restricted device profile to matching sessions, so Jellyfin never
+                            offers (or transcodes to) codecs those devices can't actually handle. Pick a
+                            previously-connected device to see which codecs it has actually reported
+                            supporting — unsupported codecs are greyed out and unchecked automatically, but
+                            you can still uncheck a codec the device claims to support if it's known to be
+                            broken in practice.
+                        </p>
+                    </div>
+
+                    <div class="noAv1Section">
+                        <h2>Rule editor</h2>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1RuleLabel">Label</label>
+                            <input is="emby-input" type="text" id="noAv1RuleLabel" placeholder="e.g. Living Room Shield" />
+                            <div class="fieldDescription">Just for your own reference in the list below.</div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1DeviceSelect">Known device</label>
+                            <select id="noAv1DeviceSelect" is="emby-select" style="width:100%;max-width:32em;">
+                                <option value="">-- Not a specific device (pattern-based rule) --</option>
+                            </select>
+                            <div class="fieldDescription">
+                                Selecting a device fills in its Device ID and shows which codecs it has reported
+                                supporting. Leave unselected to build a rule from app/device-name patterns instead.
+                            </div>
+                            <div id="noAv1DeviceNote" class="noAv1DeviceNote"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1DeviceId">Device ID (exact match)</label>
+                            <input is="emby-input" type="text" id="noAv1DeviceId" />
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1AppNameRegex">App name regex</label>
+                            <input is="emby-input" type="text" id="noAv1AppNameRegex" placeholder="e.g. ^Jellyfin for Roku$" />
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1DeviceNameRegex">Device name regex</label>
+                            <input is="emby-input" type="text" id="noAv1DeviceNameRegex" />
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1RemoteAddress">Remote address contains</label>
+                            <input is="emby-input" type="text" id="noAv1RemoteAddress" placeholder="e.g. 192.168.1." />
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label>Allowed video codecs</label>
+                            <div id="noAv1VideoCodecGroup" class="codecGroup"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label>Allowed audio codecs</label>
+                            <div id="noAv1AudioCodecGroup" class="codecGroup"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <button is="emby-button" type="button" class="raised button-submit" id="noAv1SaveRuleButton">Add rule</button>
+                            <button is="emby-button" type="button" class="raised" id="noAv1CancelEditButton" style="display:none;">Cancel edit</button>
+                        </div>
+                    </div>
+
+                    <div class="noAv1Section">
+                        <h2>Configured rules</h2>
+                        <table class="noAv1RulesTable">
+                            <thead>
+                                <tr>
+                                    <th>Label</th>
+                                    <th>Match</th>
+                                    <th>Video codecs</th>
+                                    <th>Audio codecs</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="noAv1RulesTableBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block" id="noAv1SaveConfigButton">
+                            <span>Save Configuration</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript">
+        (function () {
+            var pluginUniqueId = 'f3b6a9d6-6a7e-4b4c-9e9b-6d9b5c5a6f11';
+            var pageEl = document.querySelector('#NoAv1ConfigPage');
+
+            var state = {
+                config: null,
+                devices: [],
+                videoCodecs: [],
+                audioCodecs: [],
+                editingIndex: -1
+            };
+
+            function byId(id) {
+                return pageEl.querySelector('#' + id);
+            }
+
+            function apiGet(path) {
+                return ApiClient.getJSON(ApiClient.getUrl(path));
+            }
+
+            function renderCodecGroup(containerId, codecs, groupName) {
+                var container = byId(containerId);
+                container.innerHTML = '';
+                codecs.forEach(function (codec) {
+                    var wrap = document.createElement('div');
+                    wrap.className = 'codecOption';
+                    wrap.setAttribute('data-codec', codec.toLowerCase());
+
+                    var checkboxId = groupName + '_' + codec;
+                    var input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.id = checkboxId;
+                    input.value = codec;
+
+                    var label = document.createElement('label');
+                    label.setAttribute('for', checkboxId);
+                    label.textContent = codec;
+
+                    wrap.appendChild(input);
+                    wrap.appendChild(label);
+                    container.appendChild(wrap);
+                });
+            }
+
+            function setCodecAvailability(containerId, claimedCodecs, hasReportedProfile) {
+                var container = byId(containerId);
+                var claimed = new Set((claimedCodecs || []).map(function (c) { return c.toLowerCase(); }));
+
+                Array.prototype.forEach.call(container.querySelectorAll('.codecOption'), function (wrap) {
+                    var codec = wrap.getAttribute('data-codec');
+                    var input = wrap.querySelector('input');
+
+                    if (!hasReportedProfile) {
+                        // No reported profile for this device: nothing to grey out, admin picks manually.
+                        input.disabled = false;
+                        wrap.classList.remove('codecUnavailable');
+                        return;
+                    }
+
+                    var supported = claimed.has(codec);
+                    input.disabled = !supported;
+                    wrap.classList.toggle('codecUnavailable', !supported);
+                    if (!supported) {
+                        input.checked = false;
+                        wrap.title = 'This device has not reported support for ' + codec + '.';
+                    } else {
+                        wrap.title = '';
+                    }
+                });
+            }
+
+            function resetCodecAvailability() {
+                setCodecAvailability('noAv1VideoCodecGroup', [], false);
+                setCodecAvailability('noAv1AudioCodecGroup', [], false);
+            }
+
+            function getCheckedCodecs(containerId) {
+                var container = byId(containerId);
+                return Array.prototype.slice
+                    .call(container.querySelectorAll('input[type="checkbox"]:checked'))
+                    .map(function (el) { return el.value; });
+            }
+
+            function setCheckedCodecs(containerId, codecs) {
+                var codecSet = new Set((codecs || []).map(function (c) { return c.toLowerCase(); }));
+                var container = byId(containerId);
+                Array.prototype.forEach.call(container.querySelectorAll('input[type="checkbox"]'), function (input) {
+                    if (codecSet.has(input.value.toLowerCase()) && !input.disabled) {
+                        input.checked = true;
+                    }
+                });
+            }
+
+            function populateDeviceSelect() {
+                var select = byId('noAv1DeviceSelect');
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+
+                state.devices.forEach(function (device) {
+                    var opt = document.createElement('option');
+                    opt.value = device.Id;
+                    var label = device.Name || device.Id;
+                    if (device.AppName) {
+                        label += ' (' + device.AppName + ')';
+                    }
+                    opt.textContent = label;
+                    select.appendChild(opt);
+                });
+            }
+
+            function findDevice(deviceId) {
+                return state.devices.find(function (d) { return d.Id === deviceId; });
+            }
+
+            function onDeviceSelectChange() {
+                var deviceId = byId('noAv1DeviceSelect').value;
+                var noteEl = byId('noAv1DeviceNote');
+
+                if (!deviceId) {
+                    byId('noAv1DeviceId').value = '';
+                    noteEl.textContent = '';
+                    resetCodecAvailability();
+                    return;
+                }
+
+                var device = findDevice(deviceId);
+                byId('noAv1DeviceId').value = deviceId;
+
+                if (!device) {
+                    noteEl.textContent = '';
+                    resetCodecAvailability();
+                    return;
+                }
+
+                if (!device.HasReportedProfile) {
+                    noteEl.textContent = 'This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.';
+                } else {
+                    noteEl.textContent = 'Showing codecs ' + device.Name + ' has reported supporting. Uncheck any that don\'t actually work well on this device.';
+                }
+
+                setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
+                setCodecAvailability('noAv1AudioCodecGroup', device.ClaimedAudioCodecs, device.HasReportedProfile);
+            }
+
+            function clearForm() {
+                byId('noAv1RuleLabel').value = '';
+                byId('noAv1DeviceSelect').value = '';
+                byId('noAv1DeviceId').value = '';
+                byId('noAv1AppNameRegex').value = '';
+                byId('noAv1DeviceNameRegex').value = '';
+                byId('noAv1RemoteAddress').value = '';
+                byId('noAv1DeviceNote').textContent = '';
+                resetCodecAvailability();
+                // Default a fresh rule to the plugin's original H.264/HEVC + AAC/MP3 behavior.
+                setCheckedCodecs('noAv1VideoCodecGroup', ['h264', 'hevc']);
+                setCheckedCodecs('noAv1AudioCodecGroup', ['aac', 'mp3']);
+                state.editingIndex = -1;
+                byId('noAv1SaveRuleButton').textContent = 'Add rule';
+                byId('noAv1CancelEditButton').style.display = 'none';
+            }
+
+            function summarizeMatch(rule) {
+                var parts = [];
+                if (rule.DeviceId) { parts.push('Device: ' + rule.DeviceId); }
+                if (rule.AppNameRegex) { parts.push('App: /' + rule.AppNameRegex + '/'); }
+                if (rule.DeviceNameRegex) { parts.push('Device name: /' + rule.DeviceNameRegex + '/'); }
+                if (rule.RemoteAddress) { parts.push('Remote: ' + rule.RemoteAddress); }
+                return parts.length ? parts.join('<br />') : '<em>No match criteria set</em>';
+            }
+
+            function renderRulesTable() {
+                var body = byId('noAv1RulesTableBody');
+                body.innerHTML = '';
+
+                (state.config.Rules || []).forEach(function (rule, index) {
+                    var tr = document.createElement('tr');
+
+                    var tdLabel = document.createElement('td');
+                    tdLabel.textContent = rule.Label || '(unlabeled)';
+                    tr.appendChild(tdLabel);
+
+                    var tdMatch = document.createElement('td');
+                    tdMatch.innerHTML = summarizeMatch(rule);
+                    tr.appendChild(tdMatch);
+
+                    var tdVideo = document.createElement('td');
+                    tdVideo.textContent = (rule.AllowedVideoCodecs || []).join(', ');
+                    tr.appendChild(tdVideo);
+
+                    var tdAudio = document.createElement('td');
+                    tdAudio.textContent = (rule.AllowedAudioCodecs || []).join(', ');
+                    tr.appendChild(tdAudio);
+
+                    var tdButtons = document.createElement('td');
+                    tdButtons.className = 'noAv1RowButtons';
+
+                    var editBtn = document.createElement('button');
+                    editBtn.type = 'button';
+                    editBtn.className = 'raised';
+                    editBtn.textContent = 'Edit';
+                    editBtn.addEventListener('click', function () { editRule(index); });
+
+                    var deleteBtn = document.createElement('button');
+                    deleteBtn.type = 'button';
+                    deleteBtn.className = 'raised';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.addEventListener('click', function () { deleteRule(index); });
+
+                    tdButtons.appendChild(editBtn);
+                    tdButtons.appendChild(deleteBtn);
+                    tr.appendChild(tdButtons);
+
+                    body.appendChild(tr);
+                });
+            }
+
+            function editRule(index) {
+                var rule = state.config.Rules[index];
+                state.editingIndex = index;
+
+                byId('noAv1RuleLabel').value = rule.Label || '';
+                byId('noAv1DeviceId').value = rule.DeviceId || '';
+                byId('noAv1AppNameRegex').value = rule.AppNameRegex || '';
+                byId('noAv1DeviceNameRegex').value = rule.DeviceNameRegex || '';
+                byId('noAv1RemoteAddress').value = rule.RemoteAddress || '';
+
+                var matchingDevice = rule.DeviceId ? findDevice(rule.DeviceId) : null;
+                byId('noAv1DeviceSelect').value = matchingDevice ? matchingDevice.Id : '';
+
+                if (matchingDevice) {
+                    setCodecAvailability('noAv1VideoCodecGroup', matchingDevice.ClaimedVideoCodecs, matchingDevice.HasReportedProfile);
+                    setCodecAvailability('noAv1AudioCodecGroup', matchingDevice.ClaimedAudioCodecs, matchingDevice.HasReportedProfile);
+                } else {
+                    resetCodecAvailability();
+                }
+
+                setCheckedCodecs('noAv1VideoCodecGroup', rule.AllowedVideoCodecs);
+                setCheckedCodecs('noAv1AudioCodecGroup', rule.AllowedAudioCodecs);
+
+                byId('noAv1SaveRuleButton').textContent = 'Update rule';
+                byId('noAv1CancelEditButton').style.display = '';
+
+                pageEl.querySelector('.noAv1Section').scrollIntoView({ behavior: 'smooth' });
+            }
+
+            function deleteRule(index) {
+                state.config.Rules.splice(index, 1);
+                renderRulesTable();
+                if (state.editingIndex === index) {
+                    clearForm();
+                }
+            }
+
+            function saveRuleFromForm() {
+                var videoCodecs = getCheckedCodecs('noAv1VideoCodecGroup');
+                var audioCodecs = getCheckedCodecs('noAv1AudioCodecGroup');
+
+                var rule = {
+                    Label: byId('noAv1RuleLabel').value.trim() || null,
+                    DeviceId: byId('noAv1DeviceId').value.trim() || null,
+                    AppNameRegex: byId('noAv1AppNameRegex').value.trim() || null,
+                    DeviceNameRegex: byId('noAv1DeviceNameRegex').value.trim() || null,
+                    RemoteAddress: byId('noAv1RemoteAddress').value.trim() || null,
+                    AllowedVideoCodecs: videoCodecs,
+                    AllowedAudioCodecs: audioCodecs
+                };
+
+                if (!rule.DeviceId && !rule.AppNameRegex && !rule.DeviceNameRegex && !rule.RemoteAddress) {
+                    Dashboard.alert('Set at least one match criterion (device, app/device name pattern, or remote address).');
+                    return;
+                }
+
+                if (!state.config.Rules) {
+                    state.config.Rules = [];
+                }
+
+                if (state.editingIndex >= 0) {
+                    state.config.Rules[state.editingIndex] = rule;
+                } else {
+                    state.config.Rules.push(rule);
+                }
+
+                renderRulesTable();
+                clearForm();
+            }
+
+            function loadPage() {
+                Dashboard.showLoadingMsg();
+
+                Promise.all([
+                    ApiClient.getPluginConfiguration(pluginUniqueId),
+                    apiGet('NoAv1/Codecs'),
+                    apiGet('NoAv1/Devices')
+                ]).then(function (results) {
+                    state.config = results[0];
+                    state.videoCodecs = results[1].VideoCodecs || [];
+                    state.audioCodecs = results[1].AudioCodecs || [];
+                    state.devices = results[2] || [];
+
+                    renderCodecGroup('noAv1VideoCodecGroup', state.videoCodecs, 'video');
+                    renderCodecGroup('noAv1AudioCodecGroup', state.audioCodecs, 'audio');
+                    populateDeviceSelect();
+                    clearForm();
+                    renderRulesTable();
+
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('NoAv1Plugin: failed to load configuration page data', err);
+                    Dashboard.alert('Failed to load No AV1 plugin configuration. See browser console for details.');
+                });
+            }
+
+            function saveConfig(e) {
+                if (e && e.preventDefault) {
+                    e.preventDefault();
+                }
+
+                Dashboard.showLoadingMsg();
+                ApiClient.updatePluginConfiguration(pluginUniqueId, state.config).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                });
+
+                return false;
+            }
+
+            pageEl.addEventListener('pageshow', loadPage);
+            byId('noAv1DeviceSelect').addEventListener('change', onDeviceSelectChange);
+            byId('noAv1SaveRuleButton').addEventListener('click', saveRuleFromForm);
+            byId('noAv1CancelEditButton').addEventListener('click', clearForm);
+            byId('NoAv1ConfigForm').addEventListener('submit', saveConfig);
+
+            // In case this page was already visible when the script executed (some dashboard
+            // versions don't re-fire pageshow for the initial load).
+            loadPage();
+        })();
+    </script>
+</body>
+</html>

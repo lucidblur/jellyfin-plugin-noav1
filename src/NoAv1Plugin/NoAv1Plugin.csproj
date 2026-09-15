@@ -13,4 +13,13 @@
     <ProjectReference Include="../../../MediaBrowser.Controller/MediaBrowser.Controller.csproj" />
     <ProjectReference Include="../../../MediaBrowser.Model/MediaBrowser.Model.csproj" />
   </ItemGroup>
+
+  <!-- Needed for the admin API controller (Api/NoAv1Controller.cs) and its ASP.NET Core MVC types. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
 </Project>
