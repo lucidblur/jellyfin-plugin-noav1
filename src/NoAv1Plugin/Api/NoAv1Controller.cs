@@ -49,9 +49,13 @@ namespace NoAv1Plugin.Api
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase));
         }
 
-        private static DeviceCapabilityDto ToDto(DeviceInfo device)
+        private DeviceCapabilityDto ToDto(DeviceInfo device)
         {
-            var profile = device.Capabilities?.DeviceProfile;
+            // DeviceManager.ToDeviceInfo (server-side) fetches a device's ClientCapabilities
+            // but never assigns them onto the returned DeviceInfo.Capabilities -- it stays the
+            // default empty ClientCapabilities for every device, regardless of what the device
+            // actually reported. Fetch capabilities ourselves instead of trusting that field.
+            var profile = _deviceManager.GetCapabilities(device.Id)?.DeviceProfile;
 
             var claimedVideo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var claimedAudio = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
