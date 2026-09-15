@@ -31,6 +31,10 @@ echo "Building plugin against Jellyfin ref: ${JELLYFIN_REF} from ${JELLYFIN_REPO
 
 mkdir -p "$OUT_DIR"
 
+# Run build inside the official dotnet SDK container. We need to be careful to avoid
+# the host shell expanding variables that are intended for the inner script. Any variable
+# defined inside the inner script must be escaped as \$VAR so the host doesn't expand it.
+
 podman run --rm -v "$(pwd)":/src:z -w /src mcr.microsoft.com/dotnet/sdk:6.0 bash -lc "set -euo pipefail
 # If jellyfin directory doesn't exist, clone the requested ref (branch or tag)
 if [ ! -d jellyfin ]; then
@@ -45,20 +49,20 @@ else
 fi
 
 # Ensure plugin folder exists in jellyfin source tree and copy plugin source there
-PLUGIN_TARGET_DIR=jellyfin/src/Plugins/NoAv1Plugin
-mkdir -p \"${PLUGIN_TARGET_DIR}\"
+PLUGIN_TARGET_DIR=\"jellyfin/src/Plugins/NoAv1Plugin\"
+mkdir -p \"\${PLUGIN_TARGET_DIR}\"
 # Copy plugin source (overwrite existing)
-rsync -a --delete /src/${PLUGIN_SRC_DIR}/ \"${PLUGIN_TARGET_DIR}/\"
+rsync -a --delete /src/\${PLUGIN_SRC_DIR}/ \"\${PLUGIN_TARGET_DIR}/\"
 
 # Build/publish the plugin from within the jellyfin repo so ProjectReferences resolve
-DOTNET_PROJECT_PATH=jellyfin/src/Plugins/NoAv1Plugin/NoAv1Plugin.csproj
-if [ ! -f \"${DOTNET_PROJECT_PATH}\" ]; then
-  echo 'ERROR: Project not found at' \"${DOTNET_PROJECT_PATH}\" >&2
+DOTNET_PROJECT_PATH=\"jellyfin/src/Plugins/NoAv1Plugin/NoAv1Plugin.csproj\"
+if [ ! -f \"\${DOTNET_PROJECT_PATH}\" ]; then
+  echo 'ERROR: Project not found at' \"\${DOTNET_PROJECT_PATH}\" >&2
   exit 2
 fi
 
 echo 'Running dotnet publish...'
-dotnet publish \"${DOTNET_PROJECT_PATH}\" -c Release -o /src/${OUT_DIR}
+dotnet publish \"\${DOTNET_PROJECT_PATH}\" -c Release -o /src/${OUT_DIR}
 
 echo 'Build complete. Published files are in /src/${OUT_DIR} inside the host workspace.'
 "
