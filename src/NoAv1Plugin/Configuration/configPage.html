@@ -22,6 +22,12 @@
                     #NoAv1ConfigPage .noAv1FormRow { margin-bottom: 1.2em; }
                     #NoAv1ConfigPage .noAv1LogContent { display: none; width: 100%; max-width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.8em; margin-top: 0.5em; white-space: pre; }
                     #NoAv1ConfigPage option.noAv1LogSuggested { font-weight: bold; }
+                    #NoAv1ConfigPage .noAv1ModalOverlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); align-items: center; justify-content: center; z-index: 1000; padding: 1em; box-sizing: border-box; }
+                    #NoAv1ConfigPage .noAv1ModalOverlay.noAv1ModalOpen { display: flex; }
+                    #NoAv1ConfigPage .noAv1ModalDialog { background: #202020; color: inherit; width: 100%; max-width: 46em; max-height: 90vh; overflow-y: auto; border-radius: 6px; padding: 1.25em 1.5em 1.5em; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); box-sizing: border-box; }
+                    #NoAv1ConfigPage .noAv1ModalHeader { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-bottom: 0.25em; }
+                    #NoAv1ConfigPage .noAv1ModalHeader h2 { margin: 0; }
+                    #NoAv1ConfigPage .noAv1ModalClose { background: none; border: none; font-size: 1.6em; line-height: 1; cursor: pointer; color: inherit; padding: 0 0.2em; }
                 </style>
 
                 <form id="NoAv1ConfigForm">
@@ -54,19 +60,12 @@
                         </div>
 
                         <div class="noAv1FormRow">
-                            <label for="noAv1LogFilter">Client debug logs</label>
-                            <input is="emby-input" type="text" id="noAv1LogFilter" placeholder="Filter by app name, version, or filename..." />
+                            <button is="emby-button" type="button" class="raised" id="noAv1OpenLogModalButton">Check a device debug log&hellip;</button>
                             <div class="fieldDescription">
-                                Logs uploaded via a client's "Send Logs" feature. Their filenames don't include a
-                                device ID, so this can't <em>confirm</em> which device a log came from — picking a
-                                known device above pre-fills this filter with its app name and marks the log
-                                closest in time to that device's last activity as a suggested match.
+                                Logs uploaded via a client's "Send Logs" feature. Opening this from a selected device
+                                pre-fills the filter with its app name and marks the log closest in time to its last
+                                activity as a suggested match.
                             </div>
-                            <select id="noAv1LogSelect" is="emby-select" style="width:100%;max-width:44em;" size="6"></select>
-                            <div>
-                                <button is="emby-button" type="button" class="raised" id="noAv1LoadLogButton">Load selected log</button>
-                            </div>
-                            <textarea id="noAv1LogContent" class="noAv1LogContent" readonly rows="14"></textarea>
                         </div>
 
                         <div class="noAv1FormRow">
@@ -130,6 +129,34 @@
                         </button>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <div id="noAv1LogModalOverlay" class="noAv1ModalOverlay">
+            <div class="noAv1ModalDialog" role="dialog" aria-modal="true" aria-labelledby="noAv1LogModalTitle">
+                <div class="noAv1ModalHeader">
+                    <h2 id="noAv1LogModalTitle">Check a device debug log</h2>
+                    <button type="button" class="noAv1ModalClose" id="noAv1LogModalCloseButton" aria-label="Close">&times;</button>
+                </div>
+                <div class="noAv1ModalBody">
+                    <p class="fieldDescription">
+                        Logs uploaded via a client's "Send Logs" feature. Their filenames don't include a device ID,
+                        so this can't <em>confirm</em> which device a log came from — opening this from a selected
+                        device pre-fills the filter with its app name and marks the log closest in time to its last
+                        activity as a suggested match.
+                    </p>
+
+                    <div class="noAv1FormRow">
+                        <label for="noAv1LogFilter">Filter logs</label>
+                        <input is="emby-input" type="text" id="noAv1LogFilter" placeholder="Filter by app name, version, or filename..." />
+                    </div>
+
+                    <select id="noAv1LogSelect" is="emby-select" style="width:100%;" size="6"></select>
+                    <div class="noAv1FormRow">
+                        <button is="emby-button" type="button" class="raised" id="noAv1LoadLogButton">Load selected log</button>
+                    </div>
+                    <textarea id="noAv1LogContent" class="noAv1LogContent" readonly rows="10"></textarea>
+                </div>
             </div>
         </div>
     <script type="text/javascript">
@@ -602,6 +629,26 @@
                 });
             }
 
+            function openLogModal() {
+                byId('noAv1LogModalOverlay').classList.add('noAv1ModalOpen');
+
+                // Re-sync the filter/suggestion with whichever device is currently selected,
+                // same as the auto-fill this did when the section was always visible inline.
+                var deviceId = byId('noAv1DeviceSelect').value;
+                var device = deviceId ? findDevice(deviceId) : null;
+                var suggestedLog = device ? findSuggestedLog(device) : null;
+                var filterText = device && device.AppName ? device.AppName : byId('noAv1LogFilter').value;
+                byId('noAv1LogFilter').value = filterText;
+                renderLogList(filterText, suggestedLog);
+            }
+
+            function closeLogModal() {
+                byId('noAv1LogModalOverlay').classList.remove('noAv1ModalOpen');
+                // Reset so reopening starts fresh rather than showing stale loaded content.
+                byId('noAv1LogContent').value = '';
+                byId('noAv1LogContent').style.display = 'none';
+            }
+
             function clearForm() {
                 byId('noAv1DeviceSelect').value = '';
                 byId('noAv1AppNameRegex').value = '';
@@ -799,6 +846,13 @@
                 renderLogList(this.value, null);
             });
             byId('noAv1LoadLogButton').addEventListener('click', loadSelectedLog);
+            byId('noAv1OpenLogModalButton').addEventListener('click', openLogModal);
+            byId('noAv1LogModalCloseButton').addEventListener('click', closeLogModal);
+            byId('noAv1LogModalOverlay').addEventListener('click', function (e) {
+                if (e.target === byId('noAv1LogModalOverlay')) {
+                    closeLogModal();
+                }
+            });
             byId('noAv1SaveRuleButton').addEventListener('click', saveRuleFromForm);
             byId('noAv1CancelEditButton').addEventListener('click', clearForm);
             byId('NoAv1ConfigForm').addEventListener('submit', saveConfig);
