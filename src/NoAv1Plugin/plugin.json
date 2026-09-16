@@ -1,7 +1,7 @@
 {
   "name": "No AV1 Device Overrides",
   "guid": "f3b6a9d6-6a7e-4b4c-9e9b-6d9b5c5a6f11",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "timestamp": "2026-01-01T00:00:00Z",
   "description": "Plugin to apply a DeviceProfile override removing AV1 direct-play for selected devices.",
   "owner": "lucidblur",

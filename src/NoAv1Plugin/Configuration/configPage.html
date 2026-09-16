@@ -308,6 +308,33 @@
                 var filterText = device.AppName || '';
                 byId('noAv1LogFilter').value = filterText;
                 renderLogList(filterText, suggestedLog);
+
+                // No live/persisted capability data yet for this device (a fresh onboarding is
+                // exactly when that's most likely -- nothing has played since the last server
+                // restart). If there's an uploaded debug log that's probably this device, use it
+                // right away instead of making the admin click into the log section separately.
+                if (!device.HasReportedProfile && suggestedLog) {
+                    autoApplyFromSuggestedLog(device, suggestedLog);
+                }
+            }
+
+            function autoApplyFromSuggestedLog(device, log) {
+                apiGet('NoAv1/Logs/' + encodeURIComponent(log.FileName)).then(function (result) {
+                    var parsed = parseLogCodecs(result.Content);
+                    if (!parsed) {
+                        return;
+                    }
+
+                    applyParsedCodecs(parsed);
+
+                    var when = log.Timestamp ? new Date(log.Timestamp).toLocaleString() : 'an unknown time';
+                    byId('noAv1DeviceNote').textContent =
+                        'No live capability data yet for ' + device.Name + ' -- auto-populated from its uploaded debug log (' +
+                        when + '). Review and adjust as needed.';
+                }).catch(function (err) {
+                    // Best-effort convenience only -- leave the manual log picker as the fallback.
+                    console.error('NoAv1Plugin: failed to auto-apply codecs from suggested log', err);
+                });
             }
 
             function findSuggestedLog(device) {
