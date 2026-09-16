@@ -64,6 +64,10 @@ namespace NoAv1Plugin.Api
             var profile = dto?.DeviceProfile;
             if (profile is null)
             {
+                _logger.LogDebug(
+                    "NoAv1Plugin: filter invoked for {Action} but found no PlaybackInfoDto.DeviceProfile action argument (args: {Args})",
+                    context.ActionDescriptor.DisplayName,
+                    string.Join(", ", context.ActionArguments.Keys));
                 return;
             }
 
@@ -82,6 +86,7 @@ namespace NoAv1Plugin.Api
             var plugin = Plugin.Instance;
             if (plugin?.Configuration?.Rules is null || plugin.Configuration.Rules.Count == 0)
             {
+                _logger.LogInformation("NoAv1Plugin: filter saw playback request from device {DeviceId} but no rules are configured", deviceId);
                 return;
             }
 
@@ -92,8 +97,21 @@ namespace NoAv1Plugin.Api
             var rule = Plugin.FindMatchingRule(plugin.Configuration.Rules, deviceId, appName, deviceName, remoteAddress);
             if (rule is null)
             {
+                _logger.LogInformation(
+                    "NoAv1Plugin: filter saw playback request from device {DeviceId} (app: {AppName}; device name: {DeviceName}; remote: {RemoteAddress}) but no configured rule matched",
+                    deviceId,
+                    appName,
+                    deviceName,
+                    remoteAddress);
                 return;
             }
+
+            _logger.LogInformation(
+                "NoAv1Plugin: filter matched device {DeviceId} to rule {RuleLabel}; restricting submitted DeviceProfile to video=[{AllowedVideo}] audio=[{AllowedAudio}]",
+                deviceId,
+                rule.Label,
+                rule.AllowedVideoCodecs is { Count: > 0 } ? string.Join(',', rule.AllowedVideoCodecs) : "h264,hevc (default)",
+                rule.AllowedAudioCodecs is { Count: > 0 } ? string.Join(',', rule.AllowedAudioCodecs) : "aac,mp3 (default)");
 
             RestrictProfile(profile, rule);
         }
