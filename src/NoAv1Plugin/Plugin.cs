@@ -84,57 +84,69 @@ namespace NoAv1Plugin
                 return;
             }
 
-            var rules = Configuration?.Rules ?? new List<DeviceRule>();
+            var rule = FindMatchingRule(Configuration?.Rules, session.DeviceId, session.Client, session.DeviceName, session.RemoteEndPoint);
+            if (rule is not null)
+            {
+                ApplyOverride(session.DeviceId, rule);
+            }
+        }
+
+        /// <summary>
+        /// Finds the first configured rule matching the given device/session attributes.
+        /// Shared by the SessionStarted-based capability override and the playback-info action
+        /// filter (<see cref="Api.NoAv1PlaybackInfoFilter"/>), which is the mechanism that
+        /// actually enforces restrictions against clients that submit their own DeviceProfile
+        /// (SaveCapabilities-based overrides are only ever consulted by the server as a fallback
+        /// for clients that submit none).
+        /// </summary>
+        public static DeviceRule? FindMatchingRule(
+            IEnumerable<DeviceRule>? rules,
+            string? deviceId,
+            string? appName,
+            string? deviceName,
+            string? remoteAddress)
+        {
+            if (rules is null)
+            {
+                return null;
+            }
 
             foreach (var rule in rules)
             {
-                // match by DeviceId exact
+                bool deviceIdMatches(string? candidateDeviceId) =>
+                    string.IsNullOrWhiteSpace(rule.DeviceId) ||
+                    (candidateDeviceId is not null && string.Equals(rule.DeviceId, candidateDeviceId, StringComparison.OrdinalIgnoreCase));
+
                 if (!string.IsNullOrWhiteSpace(rule.DeviceId) &&
-                    string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
+                    deviceId is not null &&
+                    string.Equals(rule.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase))
                 {
-                    ApplyOverride(session.DeviceId, rule);
-                    return;
+                    return rule;
                 }
 
-                // match by AppName regex
-                if (!string.IsNullOrWhiteSpace(rule.AppNameRegex) && !string.IsNullOrEmpty(session.Client))
+                if (!string.IsNullOrWhiteSpace(rule.AppNameRegex) && !string.IsNullOrEmpty(appName) &&
+                    Regex.IsMatch(appName, rule.AppNameRegex, RegexOptions.IgnoreCase) &&
+                    deviceIdMatches(deviceId))
                 {
-                    if (Regex.IsMatch(session.Client, rule.AppNameRegex, RegexOptions.IgnoreCase))
-                    {
-                        if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            ApplyOverride(session.DeviceId, rule);
-                            return;
-                        }
-                    }
+                    return rule;
                 }
 
-                // match by DeviceName regex
-                if (!string.IsNullOrWhiteSpace(rule.DeviceNameRegex) && !string.IsNullOrEmpty(session.DeviceName))
+                if (!string.IsNullOrWhiteSpace(rule.DeviceNameRegex) && !string.IsNullOrEmpty(deviceName) &&
+                    Regex.IsMatch(deviceName, rule.DeviceNameRegex, RegexOptions.IgnoreCase) &&
+                    deviceIdMatches(deviceId))
                 {
-                    if (Regex.IsMatch(session.DeviceName, rule.DeviceNameRegex, RegexOptions.IgnoreCase))
-                    {
-                        if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            ApplyOverride(session.DeviceId, rule);
-                            return;
-                        }
-                    }
+                    return rule;
                 }
 
-                // match by remote IP if specified in rule (optional field)
-                if (!string.IsNullOrWhiteSpace(rule.RemoteAddress) && !string.IsNullOrEmpty(session.RemoteEndPoint))
+                if (!string.IsNullOrWhiteSpace(rule.RemoteAddress) && !string.IsNullOrEmpty(remoteAddress) &&
+                    remoteAddress.Contains(rule.RemoteAddress, StringComparison.OrdinalIgnoreCase) &&
+                    deviceIdMatches(deviceId))
                 {
-                    if (session.RemoteEndPoint!.Contains(rule.RemoteAddress, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (string.IsNullOrWhiteSpace(rule.DeviceId) || string.Equals(rule.DeviceId, session.DeviceId, StringComparison.OrdinalIgnoreCase))
-                        {
-                            ApplyOverride(session.DeviceId, rule);
-                            return;
-                        }
-                    }
+                    return rule;
                 }
             }
+
+            return null;
         }
 
         private static readonly string[] DefaultVideoCodecs = { "h264", "hevc" };

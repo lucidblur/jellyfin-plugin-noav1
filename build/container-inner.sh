@@ -61,5 +61,6 @@ dotnet publish "${DOTNET_PROJECT_PATH}" -c Release -o "/src/${OUT_DIR}"
 # host's and break DI/type identity. Only the plugin's own assembly should ever be installed.
 echo 'Trimming publish output to only the plugin assembly...'
 find "/src/${OUT_DIR}" -maxdepth 1 -type f ! -name 'NoAv1Plugin.dll' ! -name 'NoAv1Plugin.pdb' -delete
+find "/src/${OUT_DIR}" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} +
 
 echo "Build complete. Published files are in /src/${OUT_DIR} inside the host workspace."

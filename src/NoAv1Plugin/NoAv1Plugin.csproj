@@ -29,6 +29,10 @@
     <ProjectReference Include="../../../MediaBrowser.Common/MediaBrowser.Common.csproj" />
     <ProjectReference Include="../../../MediaBrowser.Controller/MediaBrowser.Controller.csproj" />
     <ProjectReference Include="../../../MediaBrowser.Model/MediaBrowser.Model.csproj" />
+    <!-- Only for the PlaybackInfoDto type (Api/NoAv1PlaybackInfoFilter.cs needs to type-match
+         the actual action argument MediaInfoController binds from the client's POST body, to
+         edit its submitted DeviceProfile before StreamBuilder sees it). -->
+    <ProjectReference Include="../../../Jellyfin.Api/Jellyfin.Api.csproj" />
   </ItemGroup>
 
   <!-- Needed for the admin API controller (Api/NoAv1Controller.cs) and its ASP.NET Core MVC types. -->
