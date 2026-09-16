@@ -409,7 +409,7 @@
                 // all of them, since we only need one hardware path to exist.
                 var blockRe = /isHardwareAccelerated:\s*(true|false)[\s\S]{0,300}?\*\*(video|audio)\/([a-zA-Z0-9.\-]+)\*\*/g;
                 var videoHasHardwareDecoder = {};
-                var audioMimeSeen = {};
+                var decoderAudioSeen = {};
                 var match;
                 while ((match = blockRe.exec(text)) !== null) {
                     var subtype = match[3].toLowerCase();
@@ -417,7 +417,7 @@
                         videoHasHardwareDecoder[subtype] = !!videoHasHardwareDecoder[subtype] || match[1] === 'true';
                         source = 'decoders';
                     } else {
-                        audioMimeSeen[subtype] = true;
+                        decoderAudioSeen[subtype] = true;
                         source = 'decoders';
                     }
                 }
@@ -425,42 +425,61 @@
                 if (source === 'decoders') {
                     // Only trust video codecs backed by an actual hardware decoder -- a
                     // software-only path is exactly the "technically works, don't rely on it"
-                    // case this plugin exists to catch. Audio decode is cheap on any device, so
-                    // that filter doesn't apply there.
+                    // case this plugin exists to catch.
                     Object.keys(videoHasHardwareDecoder).forEach(function (subtype) {
                         if (videoHasHardwareDecoder[subtype] && MIME_TO_VIDEO_CODEC[subtype]) {
                             video.add(MIME_TO_VIDEO_CODEC[subtype]);
                         }
                     });
-                    Object.keys(audioMimeSeen).forEach(function (subtype) {
+                    Object.keys(decoderAudioSeen).forEach(function (subtype) {
                         if (MIME_TO_AUDIO_CODEC[subtype]) {
                             audio.add(MIME_TO_AUDIO_CODEC[subtype]);
                         }
                     });
                 }
 
-                if (!source) {
-                    var listFields = /"(?:Video|Audio)Codec"\s*:\s*"([^"]*)"/g;
-                    while ((match = listFields.exec(text)) !== null) {
-                        match[1].split(',').forEach(function (codec) {
-                            codec = codec.trim().toLowerCase();
-                            if (codec) {
-                                video.add(codec);
-                                audio.add(codec);
-                                source = 'deviceProfile';
-                            }
-                        });
-                    }
+                // Always also look for a reported DeviceProfile embedded in the log (Video/
+                // AudioCodec comma lists, or CodecProfiles entries). For *audio* this is merged
+                // in even when a decoder dump was found: unlike video, software audio decode
+                // isn't a real risk, and formats like AC3/E-AC3 are commonly handled via HDMI
+                // passthrough to a receiver rather than an on-device decoder, so they legitimately
+                // never appear in a MediaCodecList dump at all despite being genuinely supported.
+                // Video stays decoder-dump-only when one was found, to keep the hardware-backed
+                // guarantee that's the whole point of preferring it (see: av1/vc1 below).
+                var profileAudio = new Set();
+                var profileVideo = new Set();
+                var foundProfile = false;
 
-                    var codecFields = /"Codec"\s*:\s*"([^"]*)"/g;
-                    while ((match = codecFields.exec(text)) !== null) {
-                        var codec = match[1].trim().toLowerCase();
+                var listFields = /"(Video|Audio)Codec"\s*:\s*"([^"]*)"/g;
+                while ((match = listFields.exec(text)) !== null) {
+                    var targetSet = match[1] === 'Video' ? profileVideo : profileAudio;
+                    match[2].split(',').forEach(function (codec) {
+                        codec = codec.trim().toLowerCase();
                         if (codec) {
-                            video.add(codec);
-                            audio.add(codec);
-                            source = 'deviceProfile';
+                            targetSet.add(codec);
+                            foundProfile = true;
                         }
+                    });
+                }
+
+                var codecFields = /"Codec"\s*:\s*"([^"]*)"/g;
+                while ((match = codecFields.exec(text)) !== null) {
+                    var codec = match[1].trim().toLowerCase();
+                    if (codec) {
+                        // No Type context in this flat scan -- add to both, the known-codec
+                        // filter below drops whichever list it doesn't actually belong to.
+                        profileVideo.add(codec);
+                        profileAudio.add(codec);
+                        foundProfile = true;
                     }
+                }
+
+                if (source === 'decoders') {
+                    profileAudio.forEach(function (codec) { audio.add(codec); });
+                } else if (foundProfile) {
+                    profileVideo.forEach(function (codec) { video.add(codec); });
+                    profileAudio.forEach(function (codec) { audio.add(codec); });
+                    source = 'deviceProfile';
                 }
 
                 if (!source) {
