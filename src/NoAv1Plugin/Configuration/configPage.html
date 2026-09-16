@@ -31,6 +31,7 @@
                     #NoAv1ConfigPage .noAv1LogApplySection { display: none; margin-top: 1em; padding-top: 1em; border-top: 1px solid rgba(255, 255, 255, 0.15); }
                     #NoAv1ConfigPage .noAv1LogApplySection.noAv1LogApplyReady { display: block; }
                     #NoAv1ConfigPage .noAv1LogApplySummary { white-space: pre-line; }
+                    #NoAv1ConfigPage .noAv1InlineLink { background: none; border: none; padding: 0; margin-left: 0.3em; color: #00a4dc; text-decoration: underline; cursor: pointer; font-size: inherit; font-family: inherit; }
                 </style>
 
                 <form id="NoAv1ConfigForm">
@@ -299,6 +300,28 @@
                 return '^' + escapeRegex(name) + '$';
             }
 
+            function setDeviceNote(message, includeLogHint) {
+                var noteEl = byId('noAv1DeviceNote');
+                noteEl.textContent = '';
+                noteEl.appendChild(document.createTextNode(message));
+
+                if (!includeLogHint) {
+                    return;
+                }
+
+                var hintBtn = document.createElement('button');
+                hintBtn.type = 'button';
+                hintBtn.className = 'noAv1InlineLink';
+                hintBtn.textContent = 'Check a device debug log instead?';
+                // Why you'd bother: a device's self-reported claim has no concept of hardware-
+                // vs. software-decoder backing, so it can overstate what it really handles well
+                // -- a debug log's raw decoder list is more reliable, particularly for video.
+                hintBtn.title = 'A device\'s claimed codec support (the app\'s own report) has no concept of hardware- vs. software-decoder backing, so it can overstate what a device really handles well -- especially for video. A debug log\'s raw decoder list is more reliable.';
+                hintBtn.addEventListener('click', openLogModal);
+                noteEl.appendChild(document.createTextNode(' '));
+                noteEl.appendChild(hintBtn);
+            }
+
             function onDeviceSelectChange() {
                 var deviceId = byId('noAv1DeviceSelect').value;
                 var noteEl = byId('noAv1DeviceNote');
@@ -326,7 +349,7 @@
                 byId('noAv1DeviceNameRegex').value = device.Name ? exactNameRegex(device.Name) : '';
 
                 if (!device.HasReportedProfile) {
-                    noteEl.textContent = 'This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.';
+                    setDeviceNote('This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.', true);
                 } else {
                     // This reflects what the app itself *claims* in its submitted DeviceProfile,
                     // which has no concept of hardware- vs. software-decoder backing -- a device
@@ -334,7 +357,9 @@
                     // can't actually deliver well. A device debug log's raw decoder list is more
                     // trustworthy for video and, when a confident match is found below, is
                     // applied automatically right after this and supersedes it.
-                    noteEl.textContent = 'Auto-checked the codecs ' + device.Name + ' has reported supporting (the app\'s own claim — video codecs in particular may be optimistic). Uncheck any that don\'t actually work well on this device, or see below if a debug log is available.';
+                    setDeviceNote(
+                        'Auto-checked the codecs ' + device.Name + ' has reported supporting (the app\'s own claim — video codecs in particular may be optimistic). Uncheck any that don\'t actually work well on this device.',
+                        true);
                 }
 
                 setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
