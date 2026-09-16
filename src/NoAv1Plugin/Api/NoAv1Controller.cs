@@ -9,7 +9,6 @@ using MediaBrowser.Common.Api;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Model.Devices;
-using MediaBrowser.Model.Dlna;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -64,9 +63,28 @@ namespace NoAv1Plugin.Api
         public ActionResult<IEnumerable<DeviceCapabilityDto>> GetDevices()
         {
             var devices = _deviceManager.GetDeviceInfos(new DeviceQuery { Limit = 1000 });
+            var snapshots = Plugin.Instance?.Configuration?.DeviceCodecSnapshots ?? new List<DeviceCodecSnapshot>();
+            var snapshotsByName = new Dictionary<string, DeviceCodecSnapshot>(StringComparer.OrdinalIgnoreCase);
+            foreach (var snapshot in snapshots)
+            {
+                // First one wins on a duplicate name; in practice names shouldn't collide.
+                snapshotsByName.TryAdd(snapshot.DeviceName, snapshot);
+            }
 
-            return Ok(devices.Items
-                .Select(ToDto)
+            var fromKnownDevices = devices.Items.Select(device => ToDto(device, snapshotsByName)).ToList();
+
+            // A device whose identity has drifted (its DeviceId changed -- see
+            // NoAv1PlaybackInfoFilter's remarks) can have a codec snapshot with no corresponding
+            // Devices row at all. Still worth surfacing in the picker.
+            var coveredNames = new HashSet<string>(
+                fromKnownDevices.Select(d => d.Name),
+                StringComparer.OrdinalIgnoreCase);
+            var synthetic = snapshots
+                .Where(s => !coveredNames.Contains(s.DeviceName))
+                .Select(ToSyntheticDto);
+
+            return Ok(fromKnownDevices
+                .Concat(synthetic)
                 .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase));
         }
 
@@ -159,63 +177,50 @@ namespace NoAv1Plugin.Api
             };
         }
 
-        private DeviceCapabilityDto ToDto(DeviceInfo device)
+        // Deliberately not using IDeviceManager.GetCapabilities(device.Id) here (as an earlier
+        // version of this controller did): that store is purely in-memory, wiped on every
+        // server restart, and separately, DeviceManager.ToDeviceInfo never assigns
+        // ClientCapabilities onto the DeviceInfo it returns in the first place (a real bug --
+        // see docs/jellyfin-devicemanager-capabilities-bug.md). The plugin's own persisted
+        // DeviceCodecSnapshots, kept current by NoAv1PlaybackInfoFilter on every real playback
+        // request, survives restarts and is what the admin UI should trust instead.
+        private static DeviceCapabilityDto ToDto(DeviceInfo device, IReadOnlyDictionary<string, DeviceCodecSnapshot> snapshotsByName)
         {
-            // DeviceManager.ToDeviceInfo (server-side) fetches a device's ClientCapabilities
-            // but never assigns them onto the returned DeviceInfo.Capabilities -- it stays the
-            // default empty ClientCapabilities for every device, regardless of what the device
-            // actually reported. Fetch capabilities ourselves instead of trusting that field.
-            var profile = _deviceManager.GetCapabilities(device.Id)?.DeviceProfile;
-
-            var claimedVideo = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var claimedAudio = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            if (profile is not null)
+            var name = string.IsNullOrWhiteSpace(device.Name) ? (device.Id ?? "Unknown device") : device.Name;
+            DeviceCodecSnapshot? snapshot = null;
+            if (!string.IsNullOrWhiteSpace(device.Name))
             {
-                foreach (var directPlay in profile.DirectPlayProfiles ?? Array.Empty<DirectPlayProfile>())
-                {
-                    AddCodecs(claimedVideo, directPlay.VideoCodec);
-                    AddCodecs(claimedAudio, directPlay.AudioCodec);
-                }
-
-                foreach (var codecProfile in profile.CodecProfiles ?? Array.Empty<CodecProfile>())
-                {
-                    if (codecProfile.Type is CodecType.Video or CodecType.VideoAudio)
-                    {
-                        AddCodecs(claimedVideo, codecProfile.Codec);
-                    }
-
-                    if (codecProfile.Type is CodecType.Audio or CodecType.VideoAudio)
-                    {
-                        AddCodecs(claimedAudio, codecProfile.Codec);
-                    }
-                }
+                snapshotsByName.TryGetValue(device.Name, out snapshot);
             }
 
             return new DeviceCapabilityDto
             {
                 Id = device.Id ?? string.Empty,
-                Name = string.IsNullOrWhiteSpace(device.Name) ? (device.Id ?? "Unknown device") : device.Name,
+                Name = name,
                 AppName = device.AppName,
                 LastUserName = device.LastUserName,
                 DateLastActivity = device.DateLastActivity,
-                HasReportedProfile = profile is not null,
-                ClaimedVideoCodecs = claimedVideo,
-                ClaimedAudioCodecs = claimedAudio
+                HasReportedProfile = snapshot is not null,
+                ClaimedVideoCodecs = (IReadOnlyCollection<string>?)snapshot?.VideoCodecs ?? Array.Empty<string>(),
+                ClaimedAudioCodecs = (IReadOnlyCollection<string>?)snapshot?.AudioCodecs ?? Array.Empty<string>()
             };
         }
 
-        private static void AddCodecs(HashSet<string> target, string? commaSeparatedCodecs)
+        private static DeviceCapabilityDto ToSyntheticDto(DeviceCodecSnapshot snapshot)
         {
-            if (string.IsNullOrWhiteSpace(commaSeparatedCodecs))
+            return new DeviceCapabilityDto
             {
-                return;
-            }
-
-            foreach (var codec in commaSeparatedCodecs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            {
-                target.Add(codec);
-            }
+                // No real DeviceId to key on (that's exactly why this device has no Devices
+                // row) -- the name is what rules actually match against anyway.
+                Id = snapshot.DeviceName,
+                Name = snapshot.DeviceName,
+                AppName = snapshot.AppName,
+                LastUserName = null,
+                DateLastActivity = snapshot.LastSeenUtc,
+                HasReportedProfile = true,
+                ClaimedVideoCodecs = snapshot.VideoCodecs,
+                ClaimedAudioCodecs = snapshot.AudioCodecs
+            };
         }
     }
 }

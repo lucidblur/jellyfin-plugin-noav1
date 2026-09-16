@@ -141,6 +141,74 @@ namespace NoAv1Plugin
             return null;
         }
 
+        private static readonly object DeviceCodecSnapshotLock = new();
+
+        /// <summary>
+        /// Upserts a device's codec snapshot into persisted configuration (survives server
+        /// restarts, unlike IDeviceManager's capabilities store), keyed by device name. Only
+        /// writes to disk when the codec sets actually changed or the device is new, so a
+        /// device replaying/seeking within the same session doesn't trigger a disk write on
+        /// every single PlaybackInfo request.
+        /// </summary>
+        public void UpsertDeviceCodecSnapshot(string deviceName, string? appName, IReadOnlyCollection<string> videoCodecs, IReadOnlyCollection<string> audioCodecs)
+        {
+            if (string.IsNullOrWhiteSpace(deviceName))
+            {
+                return;
+            }
+
+            var sortedVideo = videoCodecs.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+            var sortedAudio = audioCodecs.Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(c => c, StringComparer.OrdinalIgnoreCase).ToList();
+
+            lock (DeviceCodecSnapshotLock)
+            {
+                var snapshots = Configuration.DeviceCodecSnapshots;
+                var existing = snapshots.FirstOrDefault(s => string.Equals(s.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
+
+                var unchanged = existing is not null &&
+                    string.Equals(existing.AppName, appName, StringComparison.OrdinalIgnoreCase) &&
+                    existing.VideoCodecs.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).SequenceEqual(sortedVideo, StringComparer.OrdinalIgnoreCase) &&
+                    existing.AudioCodecs.OrderBy(c => c, StringComparer.OrdinalIgnoreCase).SequenceEqual(sortedAudio, StringComparer.OrdinalIgnoreCase);
+
+                if (unchanged)
+                {
+                    existing!.LastSeenUtc = DateTime.UtcNow;
+                    return;
+                }
+
+                if (existing is not null)
+                {
+                    existing.AppName = appName;
+                    existing.VideoCodecs = sortedVideo;
+                    existing.AudioCodecs = sortedAudio;
+                    existing.LastSeenUtc = DateTime.UtcNow;
+                }
+                else
+                {
+                    snapshots.Add(new DeviceCodecSnapshot
+                    {
+                        DeviceName = deviceName,
+                        AppName = appName,
+                        VideoCodecs = sortedVideo,
+                        AudioCodecs = sortedAudio,
+                        LastSeenUtc = DateTime.UtcNow
+                    });
+                }
+
+                SaveConfiguration();
+
+                // Deliberately logged in full (device name + codecs) at Information so a past
+                // submission can be found later with a plain grep for the device's name, even
+                // without opening the config page.
+                _logger?.LogInformation(
+                    "NoAv1Plugin: snapshot updated for device {DeviceName} (app: {AppName}): video=[{VideoCodecs}] audio=[{AudioCodecs}]",
+                    deviceName,
+                    appName,
+                    string.Join(',', sortedVideo),
+                    string.Join(',', sortedAudio));
+            }
+        }
+
         private static readonly string[] DefaultVideoCodecs = { "h264", "hevc" };
         private static readonly string[] DefaultAudioCodecs = { "aac", "mp3" };
 

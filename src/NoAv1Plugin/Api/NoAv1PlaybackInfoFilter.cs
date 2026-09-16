@@ -77,19 +77,6 @@ namespace NoAv1Plugin.Api
             // that project's own auth wiring and have been stable across versions.
             var user = context.HttpContext.User;
             var deviceId = user.FindFirst("Jellyfin-DeviceId")?.Value;
-
-            if (!string.IsNullOrEmpty(deviceId))
-            {
-                SnapshotCapabilities(deviceId, profile);
-            }
-
-            var plugin = Plugin.Instance;
-            if (plugin?.Configuration?.Rules is null || plugin.Configuration.Rules.Count == 0)
-            {
-                _logger.LogInformation("NoAv1Plugin: filter saw playback request from device {DeviceId} but no rules are configured", deviceId);
-                return;
-            }
-
             var appName = user.FindFirst("Jellyfin-Client")?.Value;
             // Read the device name from the same self-reported per-request auth claim as
             // DeviceId/AppName (Jellyfin.Api.Auth.AuthorizationContext parses both "DeviceId"
@@ -101,6 +88,19 @@ namespace NoAv1Plugin.Api
             // have. This is why matching by DeviceId alone is fragile for a client that doesn't
             // keep sending the same one; DeviceNameRegex against this claim is more robust.
             var deviceName = user.FindFirst("Jellyfin-Device")?.Value;
+
+            if (!string.IsNullOrEmpty(deviceId))
+            {
+                SnapshotCapabilities(deviceId, deviceName, appName, profile);
+            }
+
+            var plugin = Plugin.Instance;
+            if (plugin?.Configuration?.Rules is null || plugin.Configuration.Rules.Count == 0)
+            {
+                _logger.LogInformation("NoAv1Plugin: filter saw playback request from device {DeviceId} but no rules are configured", deviceId);
+                return;
+            }
+
             var remoteAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
 
             var rule = Plugin.FindMatchingRule(plugin.Configuration.Rules, appName, deviceName, remoteAddress);
@@ -125,14 +125,17 @@ namespace NoAv1Plugin.Api
             RestrictProfile(profile, rule);
         }
 
-        private void SnapshotCapabilities(string deviceId, DeviceProfile profile)
+        private void SnapshotCapabilities(string deviceId, string? deviceName, string? appName, DeviceProfile profile)
         {
             try
             {
                 // Only the two fields NoAv1Controller.ToDto actually reads -- no need to clone
                 // (or risk missing a field of) the rest of DeviceProfile for this purpose. The
                 // referenced arrays/objects are the client's original, untouched ones: this call
-                // happens before RestrictProfile ever runs for this request.
+                // happens before RestrictProfile ever runs for this request. Kept alongside the
+                // persisted snapshot below (not replaced by it) because this is also what the
+                // server itself falls back to for a *future* request from a client that submits
+                // no profile of its own -- a separate purpose from the admin UI's device picker.
                 _deviceManager.SaveCapabilities(deviceId, new ClientCapabilities
                 {
                     DeviceProfile = new DeviceProfile
@@ -146,6 +149,24 @@ namespace NoAv1Plugin.Api
             {
                 // Best-effort only -- this must never block real playback.
                 _logger.LogWarning(ex, "NoAv1Plugin: failed to snapshot capabilities for device {DeviceId}", deviceId);
+            }
+
+            // IDeviceManager's capabilities store above is purely in-memory and is wiped on
+            // every server restart. Persist into the plugin's own saved configuration too, so
+            // the admin UI's "claimed codecs" survive a restart instead of needing the device to
+            // play something again first. Keyed by device name (not DeviceId -- see
+            // Plugin.FindMatchingRule's remarks) so this needs a name to be worth persisting.
+            if (!string.IsNullOrWhiteSpace(deviceName))
+            {
+                try
+                {
+                    var (video, audio) = DeviceProfileCodecs.Extract(profile);
+                    Plugin.Instance?.UpsertDeviceCodecSnapshot(deviceName, appName, video, audio);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "NoAv1Plugin: failed to persist codec snapshot for device {DeviceName}", deviceName);
+                }
             }
         }
 
