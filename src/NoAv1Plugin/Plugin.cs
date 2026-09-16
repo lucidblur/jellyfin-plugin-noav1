@@ -49,7 +49,14 @@ namespace NoAv1Plugin
         {
             yield return new PluginPageInfo
             {
-                Name = "NoAv1Plugin",
+                // The dashboard fetches this page from /web/ConfigurationPage?name=<Name>, and
+                // that response carries no caching headers at all (nor can a plugin add any --
+                // it's core Jellyfin code, and plugins only get DI registration hooks, not a
+                // pipeline/middleware one). Folding the version into Name instead means every
+                // update is a brand-new URL the browser has never cached, so it's always fetched
+                // fresh after an update while still caching normally within one version's
+                // lifetime -- no manual hard-refresh needed after installing a new version.
+                Name = string.Format(CultureInfo.InvariantCulture, "NoAv1Plugin-{0}", Version),
                 DisplayName = Name,
                 EmbeddedResourcePath = string.Format(CultureInfo.InvariantCulture, "{0}.Configuration.configPage.html", GetType().Namespace)
             };
