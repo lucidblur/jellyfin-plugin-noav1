@@ -41,12 +41,6 @@
                         <h2>Rule editor</h2>
 
                         <div class="noAv1FormRow">
-                            <label for="noAv1RuleLabel">Label</label>
-                            <input is="emby-input" type="text" id="noAv1RuleLabel" placeholder="e.g. Living Room Shield" />
-                            <div class="fieldDescription">Just for your own reference in the list below.</div>
-                        </div>
-
-                        <div class="noAv1FormRow">
                             <label for="noAv1DeviceSelect">Known device</label>
                             <select id="noAv1DeviceSelect" is="emby-select" style="width:100%;max-width:32em;">
                                 <option value="">-- Not a specific device (pattern-based rule) --</option>
@@ -120,7 +114,6 @@
                         <table class="noAv1RulesTable">
                             <thead>
                                 <tr>
-                                    <th>Label</th>
                                     <th>Match</th>
                                     <th>Video codecs</th>
                                     <th>Audio codecs</th>
@@ -610,7 +603,6 @@
             }
 
             function clearForm() {
-                byId('noAv1RuleLabel').value = '';
                 byId('noAv1DeviceSelect').value = '';
                 byId('noAv1AppNameRegex').value = '';
                 byId('noAv1DeviceNameRegex').value = '';
@@ -643,10 +635,6 @@
 
                 (state.config.Rules || []).forEach(function (rule, index) {
                     var tr = document.createElement('tr');
-
-                    var tdLabel = document.createElement('td');
-                    tdLabel.textContent = rule.Label || '(unlabeled)';
-                    tr.appendChild(tdLabel);
 
                     var tdMatch = document.createElement('td');
                     tdMatch.innerHTML = summarizeMatch(rule);
@@ -687,7 +675,6 @@
                 var rule = state.config.Rules[index];
                 state.editingIndex = index;
 
-                byId('noAv1RuleLabel').value = rule.Label || '';
                 byId('noAv1AppNameRegex').value = rule.AppNameRegex || '';
                 byId('noAv1DeviceNameRegex').value = rule.DeviceNameRegex || '';
                 byId('noAv1RemoteAddress').value = rule.RemoteAddress || '';
@@ -738,7 +725,6 @@
                 var audioCodecs = getCheckedCodecs('noAv1AudioCodecGroup');
 
                 var rule = {
-                    Label: byId('noAv1RuleLabel').value.trim() || null,
                     AppNameRegex: byId('noAv1AppNameRegex').value.trim() || null,
                     DeviceNameRegex: byId('noAv1DeviceNameRegex').value.trim() || null,
                     RemoteAddress: byId('noAv1RemoteAddress').value.trim() || null,

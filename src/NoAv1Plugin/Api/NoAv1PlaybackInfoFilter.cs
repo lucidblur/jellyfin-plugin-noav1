@@ -116,9 +116,9 @@ namespace NoAv1Plugin.Api
             }
 
             _logger.LogInformation(
-                "NoAv1Plugin: filter matched device {DeviceId} to rule {RuleLabel}; restricting submitted DeviceProfile to video=[{AllowedVideo}] audio=[{AllowedAudio}]",
+                "NoAv1Plugin: filter matched device {DeviceId} (name: {DeviceName}); restricting submitted DeviceProfile to video=[{AllowedVideo}] audio=[{AllowedAudio}]",
                 deviceId,
-                rule.Label,
+                deviceName,
                 rule.AllowedVideoCodecs is { Count: > 0 } ? string.Join(',', rule.AllowedVideoCodecs) : "h264,hevc (default)",
                 rule.AllowedAudioCodecs is { Count: > 0 } ? string.Join(',', rule.AllowedAudioCodecs) : "aac,mp3 (default)");
 

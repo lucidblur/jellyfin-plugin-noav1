@@ -13,9 +13,6 @@ namespace NoAv1Plugin
         // Partial match for remote endpoint (IP) if desired
         public string? RemoteAddress { get; set; }
 
-        // Friendly label shown in the admin UI, e.g. "Living Room Shield" or "All webOS TVs"
-        public string? Label { get; set; }
-
         // Video codecs to keep offering to matched devices/sessions. Defaults preserve the
         // plugin's original behavior (H.264/HEVC, no AV1) for rules saved before this field existed.
         public List<string> AllowedVideoCodecs { get; set; } = new() { "h264", "hevc" };
