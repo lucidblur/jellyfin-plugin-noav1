@@ -296,7 +296,13 @@
                 if (!device.HasReportedProfile) {
                     noteEl.textContent = 'This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.';
                 } else {
-                    noteEl.textContent = 'Auto-checked the codecs ' + device.Name + ' has reported supporting. Uncheck any that don\'t actually work well on this device.';
+                    // This reflects what the app itself *claims* in its submitted DeviceProfile,
+                    // which has no concept of hardware- vs. software-decoder backing -- a device
+                    // can (and this exact app has been observed to) claim AV1/VC1 support it
+                    // can't actually deliver well. A device debug log's raw decoder list is more
+                    // trustworthy for video and, when a confident match is found below, is
+                    // applied automatically right after this and supersedes it.
+                    noteEl.textContent = 'Auto-checked the codecs ' + device.Name + ' has reported supporting (the app\'s own claim — video codecs in particular may be optimistic). Uncheck any that don\'t actually work well on this device, or see below if a debug log is available.';
                 }
 
                 setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
@@ -309,11 +315,12 @@
                 byId('noAv1LogFilter').value = filterText;
                 renderLogList(filterText, suggestedLog);
 
-                // No live/persisted capability data yet for this device (a fresh onboarding is
-                // exactly when that's most likely -- nothing has played since the last server
-                // restart). If there's an uploaded debug log that's probably this device, use it
-                // right away instead of making the admin click into the log section separately.
-                if (!device.HasReportedProfile && suggestedLog) {
+                // A device debug log's raw decoder list (when available) is more accurate than
+                // the app's self-reported DeviceProfile above -- particularly for video, where
+                // it can tell hardware-backed support apart from a software-only claim the app
+                // makes no such distinction about. Prefer it whenever a confident match exists,
+                // not just when there's no live/persisted data at all.
+                if (suggestedLog) {
                     autoApplyFromSuggestedLog(device, suggestedLog);
                 }
             }
@@ -329,8 +336,8 @@
 
                     var when = log.Timestamp ? new Date(log.Timestamp).toLocaleString() : 'an unknown time';
                     byId('noAv1DeviceNote').textContent =
-                        'No live capability data yet for ' + device.Name + ' -- auto-populated from its uploaded debug log (' +
-                        when + '). Review and adjust as needed.';
+                        'Auto-populated from ' + device.Name + '\'s uploaded debug log (' + when +
+                        '), which is more accurate than the app\'s own claim for video codecs. Review and adjust as needed.';
                 }).catch(function (err) {
                     // Best-effort convenience only -- leave the manual log picker as the fallback.
                     console.error('NoAv1Plugin: failed to auto-apply codecs from suggested log', err);

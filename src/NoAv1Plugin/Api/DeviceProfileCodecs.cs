@@ -50,7 +50,7 @@ namespace NoAv1Plugin.Api
 
             foreach (var codec in commaSeparatedCodecs.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                target.Add(codec);
+                target.Add(CodecNameAliases.Normalize(codec));
             }
         }
     }

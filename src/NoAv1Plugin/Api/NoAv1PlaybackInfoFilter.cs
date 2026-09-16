@@ -215,14 +215,25 @@ namespace NoAv1Plugin.Api
             if (profile.CodecProfiles is not null)
             {
                 profile.CodecProfiles = profile.CodecProfiles
-                    .Where(codecProfile => codecProfile.Type switch
+                    .Where(codecProfile =>
                     {
-                        CodecType.Video => string.IsNullOrEmpty(codecProfile.Codec) || allowedVideo.Contains(codecProfile.Codec),
-                        CodecType.Audio => string.IsNullOrEmpty(codecProfile.Codec) || allowedAudio.Contains(codecProfile.Codec),
-                        CodecType.VideoAudio => string.IsNullOrEmpty(codecProfile.Codec) ||
-                            allowedVideo.Contains(codecProfile.Codec) ||
-                            allowedAudio.Contains(codecProfile.Codec),
-                        _ => true
+                        if (string.IsNullOrEmpty(codecProfile.Codec))
+                        {
+                            return true;
+                        }
+
+                        // See FilterCodecList: check both the client's own spelling and its
+                        // normalized form against the rule's allowed set.
+                        var normalized = CodecNameAliases.Normalize(codecProfile.Codec);
+                        return codecProfile.Type switch
+                        {
+                            CodecType.Video => allowedVideo.Contains(codecProfile.Codec) || allowedVideo.Contains(normalized),
+                            CodecType.Audio => allowedAudio.Contains(codecProfile.Codec) || allowedAudio.Contains(normalized),
+                            CodecType.VideoAudio =>
+                                allowedVideo.Contains(codecProfile.Codec) || allowedVideo.Contains(normalized) ||
+                                allowedAudio.Contains(codecProfile.Codec) || allowedAudio.Contains(normalized),
+                            _ => true
+                        };
                     })
                     .ToArray();
             }
@@ -235,9 +246,12 @@ namespace NoAv1Plugin.Api
                 return commaSeparatedCodecs;
             }
 
+            // Check both the client's own spelling and its normalized form (see
+            // CodecNameAliases) against the rule's allowed set, but keep whichever spelling the
+            // client actually sent -- it's the client's own profile, not ours to rewrite.
             var kept = commaSeparatedCodecs
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Where(codec => allowed.Contains(codec));
+                .Where(codec => allowed.Contains(codec) || allowed.Contains(CodecNameAliases.Normalize(codec)));
 
             return string.Join(',', kept);
         }
