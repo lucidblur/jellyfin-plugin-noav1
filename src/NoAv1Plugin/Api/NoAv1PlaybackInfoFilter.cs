@@ -91,7 +91,16 @@ namespace NoAv1Plugin.Api
             }
 
             var appName = user.FindFirst("Jellyfin-Client")?.Value;
-            var deviceName = string.IsNullOrEmpty(deviceId) ? null : _deviceManager.GetDevice(deviceId)?.Name;
+            // Read the device name from the same self-reported per-request auth claim as
+            // DeviceId/AppName (Jellyfin.Api.Auth.AuthorizationContext parses both "DeviceId"
+            // and "Device" directly off the client's auth header, independent of any Devices
+            // table row) rather than IDeviceManager.GetDevice(deviceId)?.Name, which depends on
+            // that device having a persisted Devices row -- exactly what a device sending a
+            // DeviceId the server has never seen before (as observed live: this app reconnected
+            // with a different self-reported DeviceId than its previously-registered one) won't
+            // have. This is why matching by DeviceId alone is fragile for a client that doesn't
+            // keep sending the same one; DeviceNameRegex against this claim is more robust.
+            var deviceName = user.FindFirst("Jellyfin-Device")?.Value;
             var remoteAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
 
             var rule = Plugin.FindMatchingRule(plugin.Configuration.Rules, deviceId, appName, deviceName, remoteAddress);
