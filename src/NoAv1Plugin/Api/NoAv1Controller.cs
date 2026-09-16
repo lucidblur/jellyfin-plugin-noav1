@@ -19,9 +19,14 @@ namespace NoAv1Plugin.Api
     // Read-only helper endpoints for the plugin's admin config page: the canonical codec
     // list to render as checkboxes, and per-device codec support as claimed by each device's
     // last-reported DeviceProfile (used to grey out codecs a device never claimed to support).
+    // The dashboard's config page fetches these on every load; unlike core Jellyfin's
+    // /web/ConfigurationPage (which we can't add headers to at all -- see Plugin.GetPages),
+    // this is our own controller, so we can and should stop the browser from ever serving a
+    // stale cached response for devices/codecs/logs that have since changed.
     [ApiController]
     [Route("NoAv1")]
     [Authorize(Policy = Policies.RequiresElevation)]
+    [ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
     public class NoAv1Controller : ControllerBase
     {
         // Matches upload_{clientName}_{clientVersion}_{yyyyMMddHHmmss}_{32-hex-guid}.log, the
