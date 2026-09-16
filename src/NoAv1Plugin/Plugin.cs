@@ -84,7 +84,7 @@ namespace NoAv1Plugin
                 return;
             }
 
-            var rule = FindMatchingRule(Configuration?.Rules, session.DeviceId, session.Client, session.DeviceName, session.RemoteEndPoint);
+            var rule = FindMatchingRule(Configuration?.Rules, session.Client, session.DeviceName, session.RemoteEndPoint);
             if (rule is not null)
             {
                 ApplyOverride(session.DeviceId, rule);
@@ -99,9 +99,15 @@ namespace NoAv1Plugin
         /// (SaveCapabilities-based overrides are only ever consulted by the server as a fallback
         /// for clients that submit none).
         /// </summary>
+        /// <remarks>
+        /// No DeviceId matching: it's a per-request, client-self-reported value
+        /// (Jellyfin.Api.Auth.AuthorizationContext parses it straight off the auth header, never
+        /// validated against a Devices row) and was observed live to change for the same
+        /// physical device across a reconnect. AppNameRegex/DeviceNameRegex/RemoteAddress are
+        /// what's actually reliable here.
+        /// </remarks>
         public static DeviceRule? FindMatchingRule(
             IEnumerable<DeviceRule>? rules,
-            string? deviceId,
             string? appName,
             string? deviceName,
             string? remoteAddress)
@@ -113,34 +119,20 @@ namespace NoAv1Plugin
 
             foreach (var rule in rules)
             {
-                bool deviceIdMatches(string? candidateDeviceId) =>
-                    string.IsNullOrWhiteSpace(rule.DeviceId) ||
-                    (candidateDeviceId is not null && string.Equals(rule.DeviceId, candidateDeviceId, StringComparison.OrdinalIgnoreCase));
-
-                if (!string.IsNullOrWhiteSpace(rule.DeviceId) &&
-                    deviceId is not null &&
-                    string.Equals(rule.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return rule;
-                }
-
                 if (!string.IsNullOrWhiteSpace(rule.AppNameRegex) && !string.IsNullOrEmpty(appName) &&
-                    Regex.IsMatch(appName, rule.AppNameRegex, RegexOptions.IgnoreCase) &&
-                    deviceIdMatches(deviceId))
+                    Regex.IsMatch(appName, rule.AppNameRegex, RegexOptions.IgnoreCase))
                 {
                     return rule;
                 }
 
                 if (!string.IsNullOrWhiteSpace(rule.DeviceNameRegex) && !string.IsNullOrEmpty(deviceName) &&
-                    Regex.IsMatch(deviceName, rule.DeviceNameRegex, RegexOptions.IgnoreCase) &&
-                    deviceIdMatches(deviceId))
+                    Regex.IsMatch(deviceName, rule.DeviceNameRegex, RegexOptions.IgnoreCase))
                 {
                     return rule;
                 }
 
                 if (!string.IsNullOrWhiteSpace(rule.RemoteAddress) && !string.IsNullOrEmpty(remoteAddress) &&
-                    remoteAddress.Contains(rule.RemoteAddress, StringComparison.OrdinalIgnoreCase) &&
-                    deviceIdMatches(deviceId))
+                    remoteAddress.Contains(rule.RemoteAddress, StringComparison.OrdinalIgnoreCase))
                 {
                     return rule;
                 }

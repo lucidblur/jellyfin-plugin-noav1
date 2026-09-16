@@ -103,7 +103,7 @@ namespace NoAv1Plugin.Api
             var deviceName = user.FindFirst("Jellyfin-Device")?.Value;
             var remoteAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
 
-            var rule = Plugin.FindMatchingRule(plugin.Configuration.Rules, deviceId, appName, deviceName, remoteAddress);
+            var rule = Plugin.FindMatchingRule(plugin.Configuration.Rules, appName, deviceName, remoteAddress);
             if (rule is null)
             {
                 _logger.LogInformation(

@@ -52,8 +52,9 @@
                                 <option value="">-- Not a specific device (pattern-based rule) --</option>
                             </select>
                             <div class="fieldDescription">
-                                Selecting a device fills in its Device ID and shows which codecs it has reported
-                                supporting. Leave unselected to build a rule from app/device-name patterns instead.
+                                Selecting a device fills in its device name below and auto-checks the codecs it has
+                                reported supporting. Leave unselected to build a rule from app/device-name patterns
+                                instead.
                             </div>
                             <div id="noAv1DeviceNote" class="noAv1DeviceNote"></div>
                         </div>
@@ -75,18 +76,22 @@
                         </div>
 
                         <div class="noAv1FormRow">
-                            <label for="noAv1DeviceId">Device ID (exact match)</label>
-                            <input is="emby-input" type="text" id="noAv1DeviceId" />
-                        </div>
-
-                        <div class="noAv1FormRow">
                             <label for="noAv1AppNameRegex">App name regex</label>
                             <input is="emby-input" type="text" id="noAv1AppNameRegex" placeholder="e.g. ^Jellyfin for Roku$" />
+                            <div class="fieldDescription">
+                                Matches every device running this app — combine with a device name regex below to
+                                target one specific device instead of all of them.
+                            </div>
                         </div>
 
                         <div class="noAv1FormRow">
                             <label for="noAv1DeviceNameRegex">Device name regex</label>
-                            <input is="emby-input" type="text" id="noAv1DeviceNameRegex" />
+                            <input is="emby-input" type="text" id="noAv1DeviceNameRegex" placeholder="e.g. ^Living Room TV$" />
+                            <div class="fieldDescription">
+                                The device's self-reported name — usually the most reliable way to target one
+                                specific device. (Device ID isn't offered here: it's reassigned by some clients on
+                                reconnect, so it can't be relied on to keep identifying the same physical device.)
+                            </div>
                         </div>
 
                         <div class="noAv1FormRow">
@@ -202,6 +207,9 @@
                         input.checked = false;
                         wrap.title = 'This device has not reported support for ' + codec + '.';
                     } else {
+                        // Auto-populate from the device's own claimed/reported codecs, rather
+                        // than just un-greying them and leaving the admin to check each by hand.
+                        input.checked = true;
                         wrap.title = '';
                     }
                 });
@@ -251,12 +259,19 @@
                 return state.devices.find(function (d) { return d.Id === deviceId; });
             }
 
+            function escapeRegex(text) {
+                return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            function exactNameRegex(name) {
+                return '^' + escapeRegex(name) + '$';
+            }
+
             function onDeviceSelectChange() {
                 var deviceId = byId('noAv1DeviceSelect').value;
                 var noteEl = byId('noAv1DeviceNote');
 
                 if (!deviceId) {
-                    byId('noAv1DeviceId').value = '';
                     noteEl.textContent = '';
                     resetCodecAvailability();
                     byId('noAv1LogFilter').value = '';
@@ -265,7 +280,6 @@
                 }
 
                 var device = findDevice(deviceId);
-                byId('noAv1DeviceId').value = deviceId;
 
                 if (!device) {
                     noteEl.textContent = '';
@@ -275,10 +289,14 @@
                     return;
                 }
 
+                // Device ID isn't offered as a match field (it's reassigned by some clients on
+                // reconnect), so target this device by its self-reported name instead.
+                byId('noAv1DeviceNameRegex').value = device.Name ? exactNameRegex(device.Name) : '';
+
                 if (!device.HasReportedProfile) {
                     noteEl.textContent = 'This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.';
                 } else {
-                    noteEl.textContent = 'Showing codecs ' + device.Name + ' has reported supporting. Uncheck any that don\'t actually work well on this device.';
+                    noteEl.textContent = 'Auto-checked the codecs ' + device.Name + ' has reported supporting. Uncheck any that don\'t actually work well on this device.';
                 }
 
                 setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
@@ -560,7 +578,6 @@
             function clearForm() {
                 byId('noAv1RuleLabel').value = '';
                 byId('noAv1DeviceSelect').value = '';
-                byId('noAv1DeviceId').value = '';
                 byId('noAv1AppNameRegex').value = '';
                 byId('noAv1DeviceNameRegex').value = '';
                 byId('noAv1RemoteAddress').value = '';
@@ -580,7 +597,6 @@
 
             function summarizeMatch(rule) {
                 var parts = [];
-                if (rule.DeviceId) { parts.push('Device: ' + rule.DeviceId); }
                 if (rule.AppNameRegex) { parts.push('App: /' + rule.AppNameRegex + '/'); }
                 if (rule.DeviceNameRegex) { parts.push('Device name: /' + rule.DeviceNameRegex + '/'); }
                 if (rule.RemoteAddress) { parts.push('Remote: ' + rule.RemoteAddress); }
@@ -638,12 +654,25 @@
                 state.editingIndex = index;
 
                 byId('noAv1RuleLabel').value = rule.Label || '';
-                byId('noAv1DeviceId').value = rule.DeviceId || '';
                 byId('noAv1AppNameRegex').value = rule.AppNameRegex || '';
                 byId('noAv1DeviceNameRegex').value = rule.DeviceNameRegex || '';
                 byId('noAv1RemoteAddress').value = rule.RemoteAddress || '';
 
-                var matchingDevice = rule.DeviceId ? findDevice(rule.DeviceId) : null;
+                // No DeviceId to look the device back up by anymore -- best-effort: if this
+                // rule's device name regex matches exactly one known device, select it in the
+                // dropdown purely as a convenience (re-picking it isn't required to save).
+                var matchingDevice = null;
+                if (rule.DeviceNameRegex) {
+                    try {
+                        var nameRe = new RegExp(rule.DeviceNameRegex, 'i');
+                        var candidates = state.devices.filter(function (d) { return d.Name && nameRe.test(d.Name); });
+                        if (candidates.length === 1) {
+                            matchingDevice = candidates[0];
+                        }
+                    } catch (e) {
+                        // Not a valid regex (or some other issue) -- just skip the convenience match.
+                    }
+                }
                 byId('noAv1DeviceSelect').value = matchingDevice ? matchingDevice.Id : '';
 
                 if (matchingDevice) {
@@ -676,7 +705,6 @@
 
                 var rule = {
                     Label: byId('noAv1RuleLabel').value.trim() || null,
-                    DeviceId: byId('noAv1DeviceId').value.trim() || null,
                     AppNameRegex: byId('noAv1AppNameRegex').value.trim() || null,
                     DeviceNameRegex: byId('noAv1DeviceNameRegex').value.trim() || null,
                     RemoteAddress: byId('noAv1RemoteAddress').value.trim() || null,
@@ -684,8 +712,8 @@
                     AllowedAudioCodecs: audioCodecs
                 };
 
-                if (!rule.DeviceId && !rule.AppNameRegex && !rule.DeviceNameRegex && !rule.RemoteAddress) {
-                    Dashboard.alert('Set at least one match criterion (device, app/device name pattern, or remote address).');
+                if (!rule.AppNameRegex && !rule.DeviceNameRegex && !rule.RemoteAddress) {
+                    Dashboard.alert('Set at least one match criterion (app name pattern, device name pattern, or remote address).');
                     return;
                 }
 
