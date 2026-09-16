@@ -367,6 +367,140 @@
                 }
             }
 
+            // Android clients (e.g. Jellyfin Android TV) log a full MediaCodecList decoder
+            // dump ("**video/avc**", "**audio/mp4a-latm**", ...) when "Send Logs" is used --
+            // that reflects the device's actual OS/hardware decoders, which can disagree with
+            // (and is often more trustworthy than) whatever DeviceProfile the app itself
+            // reported to the server. Prefer it; fall back to a reported DeviceProfile blob
+            // (VideoCodec/AudioCodec/Codec fields) if no decoder dump is found. Other clients'
+            // logs may match neither, in which case there's nothing to suggest.
+            var MIME_TO_VIDEO_CODEC = {
+                'avc': 'h264',
+                'hevc': 'hevc',
+                'av01': 'av1',
+                'x-vnd.on2.vp8': 'vp8',
+                'x-vnd.on2.vp9': 'vp9',
+                'mpeg2': 'mpeg2video',
+                'mp4v-es': 'mpeg4',
+                'wvc1': 'vc1',
+                'vc1': 'vc1'
+            };
+
+            var MIME_TO_AUDIO_CODEC = {
+                'mp4a-latm': 'aac',
+                'mpeg': 'mp3',
+                'ac3': 'ac3',
+                'eac3': 'eac3',
+                'flac': 'flac',
+                'opus': 'opus',
+                'vorbis': 'vorbis',
+                'raw': 'pcm_s16le'
+            };
+
+            function parseLogCodecs(text) {
+                var video = new Set();
+                var audio = new Set();
+                var source = null;
+
+                // Match each decoder block's isHardwareAccelerated flag together with the mime
+                // type it applies to (they're always within ~100 chars of each other in this
+                // dump format). A mime type can appear in multiple decoder entries (e.g. a
+                // vendor hardware one and a generic software fallback) -- OR the flag across
+                // all of them, since we only need one hardware path to exist.
+                var blockRe = /isHardwareAccelerated:\s*(true|false)[\s\S]{0,300}?\*\*(video|audio)\/([a-zA-Z0-9.\-]+)\*\*/g;
+                var videoHasHardwareDecoder = {};
+                var audioMimeSeen = {};
+                var match;
+                while ((match = blockRe.exec(text)) !== null) {
+                    var subtype = match[3].toLowerCase();
+                    if (match[2] === 'video') {
+                        videoHasHardwareDecoder[subtype] = !!videoHasHardwareDecoder[subtype] || match[1] === 'true';
+                        source = 'decoders';
+                    } else {
+                        audioMimeSeen[subtype] = true;
+                        source = 'decoders';
+                    }
+                }
+
+                if (source === 'decoders') {
+                    // Only trust video codecs backed by an actual hardware decoder -- a
+                    // software-only path is exactly the "technically works, don't rely on it"
+                    // case this plugin exists to catch. Audio decode is cheap on any device, so
+                    // that filter doesn't apply there.
+                    Object.keys(videoHasHardwareDecoder).forEach(function (subtype) {
+                        if (videoHasHardwareDecoder[subtype] && MIME_TO_VIDEO_CODEC[subtype]) {
+                            video.add(MIME_TO_VIDEO_CODEC[subtype]);
+                        }
+                    });
+                    Object.keys(audioMimeSeen).forEach(function (subtype) {
+                        if (MIME_TO_AUDIO_CODEC[subtype]) {
+                            audio.add(MIME_TO_AUDIO_CODEC[subtype]);
+                        }
+                    });
+                }
+
+                if (!source) {
+                    var listFields = /"(?:Video|Audio)Codec"\s*:\s*"([^"]*)"/g;
+                    while ((match = listFields.exec(text)) !== null) {
+                        match[1].split(',').forEach(function (codec) {
+                            codec = codec.trim().toLowerCase();
+                            if (codec) {
+                                video.add(codec);
+                                audio.add(codec);
+                                source = 'deviceProfile';
+                            }
+                        });
+                    }
+
+                    var codecFields = /"Codec"\s*:\s*"([^"]*)"/g;
+                    while ((match = codecFields.exec(text)) !== null) {
+                        var codec = match[1].trim().toLowerCase();
+                        if (codec) {
+                            video.add(codec);
+                            audio.add(codec);
+                            source = 'deviceProfile';
+                        }
+                    }
+                }
+
+                if (!source) {
+                    return null;
+                }
+
+                // Only keep codecs we actually render as checkboxes -- a codec name found in
+                // the log that isn't one of ours can't be applied to anything.
+                var knownVideo = new Set(state.videoCodecs.map(function (c) { return c.toLowerCase(); }));
+                var knownAudio = new Set(state.audioCodecs.map(function (c) { return c.toLowerCase(); }));
+                var videoResult = Array.from(video).filter(function (c) { return knownVideo.has(c); });
+                var audioResult = Array.from(audio).filter(function (c) { return knownAudio.has(c); });
+
+                if (!videoResult.length && !audioResult.length) {
+                    return null;
+                }
+
+                return { video: videoResult, audio: audioResult, source: source };
+            }
+
+            function applyParsedCodecs(parsed) {
+                [['noAv1VideoCodecGroup', parsed.video], ['noAv1AudioCodecGroup', parsed.audio]].forEach(function (pair) {
+                    var foundSet = new Set(pair[1].map(function (c) { return c.toLowerCase(); }));
+                    var container = byId(pair[0]);
+                    Array.prototype.forEach.call(container.querySelectorAll('.codecOption'), function (wrap) {
+                        var codec = wrap.getAttribute('data-codec');
+                        var input = wrap.querySelector('input');
+                        if (foundSet.has(codec)) {
+                            // The log is direct evidence this codec works, so un-grey it even
+                            // if the device's reported DeviceProfile never claimed it.
+                            input.disabled = false;
+                            wrap.classList.remove('codecUnavailable');
+                            input.checked = true;
+                        } else {
+                            input.checked = false;
+                        }
+                    });
+                });
+            }
+
             function loadSelectedLog() {
                 var select = byId('noAv1LogSelect');
                 var fileName = select.value;
@@ -382,6 +516,21 @@
                     contentEl.value = (result.Truncated ? '[log truncated to first ~2MB]\n\n' : '') + result.Content;
                     contentEl.style.display = 'block';
                     Dashboard.hideLoadingMsg();
+
+                    var parsed = parseLogCodecs(result.Content);
+                    if (!parsed) {
+                        return;
+                    }
+
+                    var summary = 'This log ' +
+                        (parsed.source === 'decoders' ? 'reports the device\'s actual decoders (video limited to hardware-accelerated ones)' : 'contains a reported device profile') +
+                        ':\n\nVideo: ' + (parsed.video.length ? parsed.video.join(', ') : '(none found)') +
+                        '\nAudio: ' + (parsed.audio.length ? parsed.audio.join(', ') : '(none found)') +
+                        '\n\nApply this as the allowed codecs for this rule? This replaces the current checkbox selections.';
+
+                    if (window.confirm(summary)) {
+                        applyParsedCodecs(parsed);
+                    }
                 }).catch(function (err) {
                     Dashboard.hideLoadingMsg();
                     console.error('NoAv1Plugin: failed to load log content', err);
