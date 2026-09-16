@@ -5,13 +5,16 @@ using System.Threading.Tasks;
 using Jellyfin.Api.Models.MediaInfoDtos;
 using MediaBrowser.Controller.Devices;
 using MediaBrowser.Model.Dlna;
+using MediaBrowser.Model.Session;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.Extensions.Logging;
 
 namespace NoAv1Plugin.Api
 {
     /// <summary>
     /// Strips disallowed codecs from a matched device's own submitted DeviceProfile before
-    /// MediaInfoController's playback-info action runs.
+    /// MediaInfoController's playback-info action runs, and snapshots every device's
+    /// as-submitted profile for the admin UI regardless of whether a rule matched.
     /// </summary>
     /// <remarks>
     /// MediaInfoController.GetPostedPlaybackInfo prefers the DeviceProfile the *client* posts
@@ -21,20 +24,32 @@ namespace NoAv1Plugin.Api
     /// own profile on every playback request, a SaveCapabilities-based override never actually
     /// influenced a real playback decision for them; it only affected clients that submit no
     /// profile, which isn't the common case this plugin exists for. This filter is the actual
-    /// enforcement point: it edits the incoming client-submitted DeviceProfile in place, before
-    /// StreamBuilder ever sees it, so StreamBuilder computes PlayMethod/TranscodingUrl exactly
-    /// as it normally would for a device that never claimed the disallowed codec -- rather than
-    /// trying to patch SupportsDirectPlay after the fact, which would leave the response with no
-    /// valid TranscodingUrl at all (SetDeviceSpecificData only computes one when SupportsDirectPlay
-    /// is already false by the time StreamBuilder runs).
+    /// enforcement point: before StreamBuilder ever sees it, it replaces the incoming client
+    /// profile's DirectPlayProfiles/CodecProfiles with filtered copies, so StreamBuilder computes
+    /// PlayMethod/TranscodingUrl exactly as it normally would for a device that never claimed the
+    /// disallowed codec -- rather than trying to patch SupportsDirectPlay after the fact, which
+    /// would leave the response with no valid TranscodingUrl at all (SetDeviceSpecificData only
+    /// computes one when SupportsDirectPlay is already false by the time StreamBuilder runs).
+    ///
+    /// It also opportunistically saves the device's *original, unrestricted* profile via
+    /// SaveCapabilities -- the same store NoAv1Controller.GetDevices reads "claimed codecs" from
+    /// for the admin UI. That store otherwise only reflects whatever a client registered once at
+    /// session-start capability negotiation, which can go stale for a long-running session; a
+    /// profile captured from an actual playback attempt is fresher and more likely to reflect
+    /// what the device would really try to do. Copies are built rather than mutating the
+    /// client's original DirectPlayProfile/CodecProfile objects in place, specifically so this
+    /// snapshot -- taken before any restriction -- can't end up capturing our own restricted
+    /// values instead of the device's real ones.
     /// </remarks>
     public class NoAv1PlaybackInfoFilter : IAsyncActionFilter
     {
         private readonly IDeviceManager _deviceManager;
+        private readonly ILogger<NoAv1PlaybackInfoFilter> _logger;
 
-        public NoAv1PlaybackInfoFilter(IDeviceManager deviceManager)
+        public NoAv1PlaybackInfoFilter(IDeviceManager deviceManager, ILogger<NoAv1PlaybackInfoFilter> logger)
         {
             _deviceManager = deviceManager;
+            _logger = logger;
         }
 
         public Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -46,13 +61,8 @@ namespace NoAv1Plugin.Api
         private void TryRestrictDeviceProfile(ActionExecutingContext context)
         {
             var dto = context.ActionArguments.Values.OfType<PlaybackInfoDto>().FirstOrDefault();
-            if (dto?.DeviceProfile is null)
-            {
-                return;
-            }
-
-            var plugin = Plugin.Instance;
-            if (plugin?.Configuration?.Rules is null || plugin.Configuration.Rules.Count == 0)
+            var profile = dto?.DeviceProfile;
+            if (profile is null)
             {
                 return;
             }
@@ -63,6 +73,18 @@ namespace NoAv1Plugin.Api
             // that project's own auth wiring and have been stable across versions.
             var user = context.HttpContext.User;
             var deviceId = user.FindFirst("Jellyfin-DeviceId")?.Value;
+
+            if (!string.IsNullOrEmpty(deviceId))
+            {
+                SnapshotCapabilities(deviceId, profile);
+            }
+
+            var plugin = Plugin.Instance;
+            if (plugin?.Configuration?.Rules is null || plugin.Configuration.Rules.Count == 0)
+            {
+                return;
+            }
+
             var appName = user.FindFirst("Jellyfin-Client")?.Value;
             var deviceName = string.IsNullOrEmpty(deviceId) ? null : _deviceManager.GetDevice(deviceId)?.Name;
             var remoteAddress = context.HttpContext.Connection.RemoteIpAddress?.ToString();
@@ -73,7 +95,31 @@ namespace NoAv1Plugin.Api
                 return;
             }
 
-            RestrictProfile(dto.DeviceProfile, rule);
+            RestrictProfile(profile, rule);
+        }
+
+        private void SnapshotCapabilities(string deviceId, DeviceProfile profile)
+        {
+            try
+            {
+                // Only the two fields NoAv1Controller.ToDto actually reads -- no need to clone
+                // (or risk missing a field of) the rest of DeviceProfile for this purpose. The
+                // referenced arrays/objects are the client's original, untouched ones: this call
+                // happens before RestrictProfile ever runs for this request.
+                _deviceManager.SaveCapabilities(deviceId, new ClientCapabilities
+                {
+                    DeviceProfile = new DeviceProfile
+                    {
+                        DirectPlayProfiles = profile.DirectPlayProfiles,
+                        CodecProfiles = profile.CodecProfiles
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                // Best-effort only -- this must never block real playback.
+                _logger.LogWarning(ex, "NoAv1Plugin: failed to snapshot capabilities for device {DeviceId}", deviceId);
+            }
         }
 
         private static readonly string[] DefaultVideoCodecs = { "h264", "hevc" };
@@ -88,22 +134,36 @@ namespace NoAv1Plugin.Api
                 rule.AllowedAudioCodecs is { Count: > 0 } ? rule.AllowedAudioCodecs : DefaultAudioCodecs,
                 StringComparer.OrdinalIgnoreCase);
 
+            // Build new DirectPlayProfile instances rather than mutating the client's own --
+            // SnapshotCapabilities above has already captured (by reference) the originals, so
+            // mutating them in place would corrupt that snapshot with our restricted values.
             if (profile.DirectPlayProfiles is not null)
             {
-                foreach (var directPlay in profile.DirectPlayProfiles)
-                {
-                    if (directPlay.Type == DlnaProfileType.Video)
+                profile.DirectPlayProfiles = profile.DirectPlayProfiles
+                    .Select(directPlay => directPlay.Type switch
                     {
-                        directPlay.VideoCodec = FilterCodecList(directPlay.VideoCodec, allowedVideo);
-                        directPlay.AudioCodec = FilterCodecList(directPlay.AudioCodec, allowedAudio);
-                    }
-                    else if (directPlay.Type == DlnaProfileType.Audio)
-                    {
-                        directPlay.AudioCodec = FilterCodecList(directPlay.AudioCodec, allowedAudio);
-                    }
-                }
+                        DlnaProfileType.Video => new DirectPlayProfile
+                        {
+                            Container = directPlay.Container,
+                            Type = directPlay.Type,
+                            VideoCodec = FilterCodecList(directPlay.VideoCodec, allowedVideo),
+                            AudioCodec = FilterCodecList(directPlay.AudioCodec, allowedAudio)
+                        },
+                        DlnaProfileType.Audio => new DirectPlayProfile
+                        {
+                            Container = directPlay.Container,
+                            Type = directPlay.Type,
+                            VideoCodec = directPlay.VideoCodec,
+                            AudioCodec = FilterCodecList(directPlay.AudioCodec, allowedAudio)
+                        },
+                        _ => directPlay
+                    })
+                    .ToArray();
             }
 
+            // CodecProfile entries are only ever kept, not modified, so reusing the client's
+            // original instances in this new (filtered) array is safe -- nothing about them is
+            // mutated, only which ones are included.
             if (profile.CodecProfiles is not null)
             {
                 profile.CodecProfiles = profile.CodecProfiles
