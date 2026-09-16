@@ -28,6 +28,9 @@
                     #NoAv1ConfigPage .noAv1ModalHeader { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-bottom: 0.25em; }
                     #NoAv1ConfigPage .noAv1ModalHeader h2 { margin: 0; }
                     #NoAv1ConfigPage .noAv1ModalClose { background: none; border: none; font-size: 1.6em; line-height: 1; cursor: pointer; color: inherit; padding: 0 0.2em; }
+                    #NoAv1ConfigPage .noAv1LogApplySection { display: none; margin-top: 1em; padding-top: 1em; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+                    #NoAv1ConfigPage .noAv1LogApplySection.noAv1LogApplyReady { display: block; }
+                    #NoAv1ConfigPage .noAv1LogApplySummary { white-space: pre-line; }
                 </style>
 
                 <form id="NoAv1ConfigForm">
@@ -156,6 +159,12 @@
                         <button is="emby-button" type="button" class="raised" id="noAv1LoadLogButton">Load selected log</button>
                     </div>
                     <textarea id="noAv1LogContent" class="noAv1LogContent" readonly rows="10"></textarea>
+
+                    <div id="noAv1LogApplySection" class="noAv1LogApplySection">
+                        <p id="noAv1LogApplySummary" class="noAv1LogApplySummary"></p>
+                        <button is="emby-button" type="button" class="raised button-submit" id="noAv1LogApplyButton">Apply these codecs</button>
+                        <button is="emby-button" type="button" class="raised" id="noAv1LogApplyCancelButton">Cancel</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -170,7 +179,10 @@
                 videoCodecs: [],
                 audioCodecs: [],
                 editingIndex: -1,
-                logs: []
+                logs: [],
+                // Codecs parsed from the log currently shown in the modal, awaiting the
+                // admin's explicit "Apply these codecs" click (or discarded on Cancel/close).
+                pendingLogCodecs: null
             };
 
             function byId(id) {
@@ -597,6 +609,8 @@
                 var fileName = select.value;
                 var contentEl = byId('noAv1LogContent');
 
+                hideLogApplySection();
+
                 if (!fileName) {
                     Dashboard.alert('Select a log from the list first.');
                     return;
@@ -617,16 +631,31 @@
                         (parsed.source === 'decoders' ? 'reports the device\'s actual decoders (video limited to hardware-accelerated ones)' : 'contains a reported device profile') +
                         ':\n\nVideo: ' + (parsed.video.length ? parsed.video.join(', ') : '(none found)') +
                         '\nAudio: ' + (parsed.audio.length ? parsed.audio.join(', ') : '(none found)') +
-                        '\n\nApply this as the allowed codecs for this rule? This replaces the current checkbox selections.';
+                        '\n\nApplying replaces the current checkbox selections.';
 
-                    if (window.confirm(summary)) {
-                        applyParsedCodecs(parsed);
-                    }
+                    state.pendingLogCodecs = parsed;
+                    byId('noAv1LogApplySummary').textContent = summary;
+                    byId('noAv1LogApplySection').classList.add('noAv1LogApplyReady');
                 }).catch(function (err) {
                     Dashboard.hideLoadingMsg();
                     console.error('NoAv1Plugin: failed to load log content', err);
                     Dashboard.alert('Failed to load that log file. See browser console for details.');
                 });
+            }
+
+            function hideLogApplySection() {
+                byId('noAv1LogApplySection').classList.remove('noAv1LogApplyReady');
+                byId('noAv1LogApplySummary').textContent = '';
+                state.pendingLogCodecs = null;
+            }
+
+            function applyPendingLogCodecs() {
+                if (!state.pendingLogCodecs) {
+                    return;
+                }
+
+                applyParsedCodecs(state.pendingLogCodecs);
+                closeLogModal();
             }
 
             function openLogModal() {
@@ -647,6 +676,7 @@
                 // Reset so reopening starts fresh rather than showing stale loaded content.
                 byId('noAv1LogContent').value = '';
                 byId('noAv1LogContent').style.display = 'none';
+                hideLogApplySection();
             }
 
             function clearForm() {
@@ -853,6 +883,8 @@
                     closeLogModal();
                 }
             });
+            byId('noAv1LogApplyButton').addEventListener('click', applyPendingLogCodecs);
+            byId('noAv1LogApplyCancelButton').addEventListener('click', hideLogApplySection);
             byId('noAv1SaveRuleButton').addEventListener('click', saveRuleFromForm);
             byId('noAv1CancelEditButton').addEventListener('click', clearForm);
             byId('NoAv1ConfigForm').addEventListener('submit', saveConfig);
