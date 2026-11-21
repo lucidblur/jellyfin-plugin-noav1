@@ -96,7 +96,7 @@ jq -n \
 echo "Wrote ${ZIP_PATH} and ${REPO_DIR}/manifest.json"
 echo ""
 echo "Serve them, e.g.:"
-echo "  python3 -m http.server 8095 --directory ${REPO_DIR}"
+echo "  ./build/serve-repo.sh"
 echo ""
 echo "Then in Jellyfin: Dashboard > Plugins > Repositories > Add Repository, using:"
 echo "  ${BASE_URL%/}/manifest.json"
