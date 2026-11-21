@@ -1,0 +1,21 @@
+[
+  {
+    "name": "No AV1 Device Overrides",
+    "description": "Apply a DeviceProfile override removing AV1 direct-play for selected devices.",
+    "overview": "Small plugin that saves a device DeviceProfile override to prevent AV1 direct-play.",
+    "owner": "lucidblur",
+    "category": "Server",
+    "guid": "f3b6a9d6-6a7e-4b4c-9e9b-6d9b5c5a6f11",
+    "imageUrl": "",
+    "versions": [
+      {
+        "version": "1.0.0",
+        "sourceUrl": "https://<your-host>/plugins/noav1-1.0.0.zip",
+        "checksum": "<md5-hex-of-zip>",
+        "targetAbi": "10.11.11",
+        "timestamp": "2026-01-01T00:00:00Z",
+        "changelog": "Initial release"
+      }
+    ]
+  }
+]

@@ -1,0 +1,924 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>No AV1 Device Overrides</title>
+</head>
+<body>
+    <div id="NoAv1ConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+        <div data-role="content">
+            <div class="content-primary">
+                <style>
+                    #NoAv1ConfigPage .noAv1Section { margin-bottom: 2em; }
+                    #NoAv1ConfigPage .codecGroup { display: flex; flex-wrap: wrap; gap: 0.75em 1.5em; margin: 0.5em 0 1em; }
+                    #NoAv1ConfigPage .codecOption { display: flex; align-items: center; gap: 0.4em; }
+                    #NoAv1ConfigPage .codecOption.codecUnavailable { opacity: 0.4; }
+                    #NoAv1ConfigPage .codecOption label { cursor: pointer; }
+                    #NoAv1ConfigPage .codecOption.codecUnavailable label { cursor: not-allowed; }
+                    #NoAv1ConfigPage table.noAv1RulesTable { width: 100%; border-collapse: collapse; margin-top: 1em; }
+                    #NoAv1ConfigPage table.noAv1RulesTable th, #NoAv1ConfigPage table.noAv1RulesTable td { text-align: left; padding: 0.5em; border-bottom: 1px solid rgba(255,255,255,0.1); vertical-align: top; }
+                    #NoAv1ConfigPage .noAv1DeviceNote { font-size: 0.9em; opacity: 0.75; margin: 0.3em 0 0.8em; }
+                    #NoAv1ConfigPage .fieldDescription { opacity: 0.7; font-size: 0.85em; margin-top: 0.2em; }
+                    #NoAv1ConfigPage .noAv1RowButtons button { margin-right: 0.4em; }
+                    #NoAv1ConfigPage .noAv1FormRow { margin-bottom: 1.2em; }
+                    #NoAv1ConfigPage .noAv1LogContent { display: none; width: 100%; max-width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.8em; margin-top: 0.5em; white-space: pre; }
+                    #NoAv1ConfigPage option.noAv1LogSuggested { font-weight: bold; }
+                    #NoAv1ConfigPage .noAv1ModalOverlay { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); align-items: center; justify-content: center; z-index: 1000; padding: 1em; box-sizing: border-box; }
+                    #NoAv1ConfigPage .noAv1ModalOverlay.noAv1ModalOpen { display: flex; }
+                    #NoAv1ConfigPage .noAv1ModalDialog { background: #202020; color: inherit; width: 100%; max-width: 46em; max-height: 90vh; overflow-y: auto; border-radius: 6px; padding: 1.25em 1.5em 1.5em; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5); box-sizing: border-box; }
+                    #NoAv1ConfigPage .noAv1ModalHeader { display: flex; justify-content: space-between; align-items: center; gap: 1em; margin-bottom: 0.25em; }
+                    #NoAv1ConfigPage .noAv1ModalHeader h2 { margin: 0; }
+                    #NoAv1ConfigPage .noAv1ModalClose { background: none; border: none; font-size: 1.6em; line-height: 1; cursor: pointer; color: inherit; padding: 0 0.2em; }
+                    #NoAv1ConfigPage .noAv1LogApplySection { display: none; margin-top: 1em; padding-top: 1em; border-top: 1px solid rgba(255, 255, 255, 0.15); }
+                    #NoAv1ConfigPage .noAv1LogApplySection.noAv1LogApplyReady { display: block; }
+                    #NoAv1ConfigPage .noAv1LogApplySummary { white-space: pre-line; }
+                    #NoAv1ConfigPage .noAv1InlineLink { background: none; border: none; padding: 0; margin-left: 0.3em; color: #00a4dc; text-decoration: underline; cursor: pointer; font-size: inherit; font-family: inherit; }
+                </style>
+
+                <form id="NoAv1ConfigForm">
+                    <div class="verticalSection">
+                        <h1>No AV1 Device Overrides</h1>
+                        <p>
+                            Rules apply a restricted device profile to matching sessions, so Jellyfin never
+                            offers (or transcodes to) codecs those devices can't actually handle. Pick a
+                            previously-connected device to see which codecs it has actually reported
+                            supporting — unsupported codecs are greyed out and unchecked automatically, but
+                            you can still uncheck a codec the device claims to support if it's known to be
+                            broken in practice.
+                        </p>
+                    </div>
+
+                    <div class="noAv1Section">
+                        <h2>Rule editor</h2>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1DeviceSelect">Known device</label>
+                            <select id="noAv1DeviceSelect" is="emby-select" style="width:100%;max-width:32em;">
+                                <option value="">-- Not a specific device (pattern-based rule) --</option>
+                            </select>
+                            <div class="fieldDescription">
+                                Selecting a device fills in its device name below and auto-checks the codecs it has
+                                reported supporting. Leave unselected to build a rule from app/device-name patterns
+                                instead.
+                            </div>
+                            <div id="noAv1DeviceNote" class="noAv1DeviceNote"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <button is="emby-button" type="button" class="raised" id="noAv1OpenLogModalButton">Check a device debug log&hellip;</button>
+                            <div class="fieldDescription">
+                                Logs uploaded via a client's "Send Logs" feature. Opening this from a selected device
+                                pre-fills the filter with its app name and marks the log closest in time to its last
+                                activity as a suggested match.
+                            </div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1AppNameRegex">App name regex</label>
+                            <input is="emby-input" type="text" id="noAv1AppNameRegex" placeholder="e.g. ^Jellyfin for Roku$" />
+                            <div class="fieldDescription">
+                                Matches every device running this app — combine with a device name regex below to
+                                target one specific device instead of all of them.
+                            </div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1DeviceNameRegex">Device name regex</label>
+                            <input is="emby-input" type="text" id="noAv1DeviceNameRegex" placeholder="e.g. ^Living Room TV$" />
+                            <div class="fieldDescription">
+                                The device's self-reported name — usually the most reliable way to target one
+                                specific device. (Device ID isn't offered here: it's reassigned by some clients on
+                                reconnect, so it can't be relied on to keep identifying the same physical device.)
+                            </div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label for="noAv1RemoteAddress">Remote address contains</label>
+                            <input is="emby-input" type="text" id="noAv1RemoteAddress" placeholder="e.g. 192.168.1." />
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label>Allowed video codecs</label>
+                            <div id="noAv1VideoCodecGroup" class="codecGroup"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <label>Allowed audio codecs</label>
+                            <div id="noAv1AudioCodecGroup" class="codecGroup"></div>
+                        </div>
+
+                        <div class="noAv1FormRow">
+                            <button is="emby-button" type="button" class="raised button-submit" id="noAv1SaveRuleButton">Add rule</button>
+                            <button is="emby-button" type="button" class="raised" id="noAv1CancelEditButton" style="display:none;">Cancel edit</button>
+                        </div>
+                    </div>
+
+                    <div class="noAv1Section">
+                        <h2>Configured rules</h2>
+                        <table class="noAv1RulesTable">
+                            <thead>
+                                <tr>
+                                    <th>Match</th>
+                                    <th>Video codecs</th>
+                                    <th>Audio codecs</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="noAv1RulesTableBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block" id="noAv1SaveConfigButton">
+                            <span>Save Configuration</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div id="noAv1LogModalOverlay" class="noAv1ModalOverlay">
+            <div class="noAv1ModalDialog" role="dialog" aria-modal="true" aria-labelledby="noAv1LogModalTitle">
+                <div class="noAv1ModalHeader">
+                    <h2 id="noAv1LogModalTitle">Check a device debug log</h2>
+                    <button type="button" class="noAv1ModalClose" id="noAv1LogModalCloseButton" aria-label="Close">&times;</button>
+                </div>
+                <div class="noAv1ModalBody">
+                    <p class="fieldDescription">
+                        Logs uploaded via a client's "Send Logs" feature. Their filenames don't include a device ID,
+                        so this can't <em>confirm</em> which device a log came from — opening this from a selected
+                        device pre-fills the filter with its app name and marks the log closest in time to its last
+                        activity as a suggested match.
+                    </p>
+
+                    <div class="noAv1FormRow">
+                        <label for="noAv1LogFilter">Filter logs</label>
+                        <input is="emby-input" type="text" id="noAv1LogFilter" placeholder="Filter by app name, version, or filename..." />
+                    </div>
+
+                    <select id="noAv1LogSelect" is="emby-select" style="width:100%;" size="6"></select>
+                    <div class="noAv1FormRow">
+                        <button is="emby-button" type="button" class="raised" id="noAv1LoadLogButton">Load selected log</button>
+                    </div>
+                    <textarea id="noAv1LogContent" class="noAv1LogContent" readonly rows="10"></textarea>
+
+                    <div id="noAv1LogApplySection" class="noAv1LogApplySection">
+                        <p id="noAv1LogApplySummary" class="noAv1LogApplySummary"></p>
+                        <button is="emby-button" type="button" class="raised button-submit" id="noAv1LogApplyButton">Apply these codecs</button>
+                        <button is="emby-button" type="button" class="raised" id="noAv1LogApplyCancelButton">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    <script type="text/javascript">
+        (function () {
+            var pluginUniqueId = 'f3b6a9d6-6a7e-4b4c-9e9b-6d9b5c5a6f11';
+            var pageEl = document.querySelector('#NoAv1ConfigPage');
+
+            var state = {
+                config: null,
+                devices: [],
+                videoCodecs: [],
+                audioCodecs: [],
+                editingIndex: -1,
+                logs: [],
+                // Codecs parsed from the log currently shown in the modal, awaiting the
+                // admin's explicit "Apply these codecs" click (or discarded on Cancel/close).
+                pendingLogCodecs: null
+            };
+
+            function byId(id) {
+                return pageEl.querySelector('#' + id);
+            }
+
+            function apiGet(path) {
+                return ApiClient.getJSON(ApiClient.getUrl(path));
+            }
+
+            function renderCodecGroup(containerId, codecs, groupName) {
+                var container = byId(containerId);
+                container.innerHTML = '';
+                codecs.forEach(function (codec) {
+                    var wrap = document.createElement('div');
+                    wrap.className = 'codecOption';
+                    wrap.setAttribute('data-codec', codec.toLowerCase());
+
+                    var checkboxId = groupName + '_' + codec;
+                    var input = document.createElement('input');
+                    input.type = 'checkbox';
+                    input.id = checkboxId;
+                    input.value = codec;
+
+                    var label = document.createElement('label');
+                    label.setAttribute('for', checkboxId);
+                    label.textContent = codec;
+
+                    wrap.appendChild(input);
+                    wrap.appendChild(label);
+                    container.appendChild(wrap);
+                });
+            }
+
+            function setCodecAvailability(containerId, claimedCodecs, hasReportedProfile) {
+                var container = byId(containerId);
+                var claimed = new Set((claimedCodecs || []).map(function (c) { return c.toLowerCase(); }));
+
+                Array.prototype.forEach.call(container.querySelectorAll('.codecOption'), function (wrap) {
+                    var codec = wrap.getAttribute('data-codec');
+                    var input = wrap.querySelector('input');
+
+                    if (!hasReportedProfile) {
+                        // No reported profile for this device: nothing to grey out, admin picks manually.
+                        input.disabled = false;
+                        wrap.classList.remove('codecUnavailable');
+                        return;
+                    }
+
+                    var supported = claimed.has(codec);
+                    input.disabled = !supported;
+                    wrap.classList.toggle('codecUnavailable', !supported);
+                    if (!supported) {
+                        input.checked = false;
+                        wrap.title = 'This device has not reported support for ' + codec + '.';
+                    } else {
+                        // Auto-populate from the device's own claimed/reported codecs, rather
+                        // than just un-greying them and leaving the admin to check each by hand.
+                        input.checked = true;
+                        wrap.title = '';
+                    }
+                });
+            }
+
+            function resetCodecAvailability() {
+                setCodecAvailability('noAv1VideoCodecGroup', [], false);
+                setCodecAvailability('noAv1AudioCodecGroup', [], false);
+            }
+
+            function getCheckedCodecs(containerId) {
+                var container = byId(containerId);
+                return Array.prototype.slice
+                    .call(container.querySelectorAll('input[type="checkbox"]:checked'))
+                    .map(function (el) { return el.value; });
+            }
+
+            function setCheckedCodecs(containerId, codecs) {
+                var codecSet = new Set((codecs || []).map(function (c) { return c.toLowerCase(); }));
+                var container = byId(containerId);
+                Array.prototype.forEach.call(container.querySelectorAll('input[type="checkbox"]'), function (input) {
+                    if (codecSet.has(input.value.toLowerCase()) && !input.disabled) {
+                        input.checked = true;
+                    }
+                });
+            }
+
+            function populateDeviceSelect() {
+                var select = byId('noAv1DeviceSelect');
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+
+                state.devices.forEach(function (device) {
+                    var opt = document.createElement('option');
+                    opt.value = device.Id;
+                    var label = device.Name || device.Id;
+                    if (device.AppName) {
+                        label += ' (' + device.AppName + ')';
+                    }
+                    opt.textContent = label;
+                    select.appendChild(opt);
+                });
+            }
+
+            function findDevice(deviceId) {
+                return state.devices.find(function (d) { return d.Id === deviceId; });
+            }
+
+            function escapeRegex(text) {
+                return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            function exactNameRegex(name) {
+                return '^' + escapeRegex(name) + '$';
+            }
+
+            function setDeviceNote(message, includeLogHint) {
+                var noteEl = byId('noAv1DeviceNote');
+                noteEl.textContent = '';
+                noteEl.appendChild(document.createTextNode(message));
+
+                if (!includeLogHint) {
+                    return;
+                }
+
+                var hintBtn = document.createElement('button');
+                hintBtn.type = 'button';
+                hintBtn.className = 'noAv1InlineLink';
+                hintBtn.textContent = 'Check a device debug log instead?';
+                // Why you'd bother: a device's self-reported claim has no concept of hardware-
+                // vs. software-decoder backing, so it can overstate what it really handles well
+                // -- a debug log's raw decoder list is more reliable, particularly for video.
+                hintBtn.title = 'A device\'s claimed codec support (the app\'s own report) has no concept of hardware- vs. software-decoder backing, so it can overstate what a device really handles well -- especially for video. A debug log\'s raw decoder list is more reliable.';
+                hintBtn.addEventListener('click', openLogModal);
+                noteEl.appendChild(document.createTextNode(' '));
+                noteEl.appendChild(hintBtn);
+            }
+
+            function onDeviceSelectChange() {
+                var deviceId = byId('noAv1DeviceSelect').value;
+                var noteEl = byId('noAv1DeviceNote');
+
+                if (!deviceId) {
+                    noteEl.textContent = '';
+                    resetCodecAvailability();
+                    byId('noAv1LogFilter').value = '';
+                    renderLogList('', null);
+                    return;
+                }
+
+                var device = findDevice(deviceId);
+
+                if (!device) {
+                    noteEl.textContent = '';
+                    resetCodecAvailability();
+                    byId('noAv1LogFilter').value = '';
+                    renderLogList('', null);
+                    return;
+                }
+
+                // Device ID isn't offered as a match field (it's reassigned by some clients on
+                // reconnect), so target this device by its self-reported name instead.
+                byId('noAv1DeviceNameRegex').value = device.Name ? exactNameRegex(device.Name) : '';
+
+                if (!device.HasReportedProfile) {
+                    setDeviceNote('This device has never reported detailed codec capabilities, so nothing is greyed out below — choose codecs manually.', true);
+                } else {
+                    // This reflects what the app itself *claims* in its submitted DeviceProfile,
+                    // which has no concept of hardware- vs. software-decoder backing -- a device
+                    // can (and this exact app has been observed to) claim AV1/VC1 support it
+                    // can't actually deliver well. A device debug log's raw decoder list is more
+                    // trustworthy for video and, when a confident match is found below, is
+                    // applied automatically right after this and supersedes it.
+                    setDeviceNote(
+                        'Auto-checked the codecs ' + device.Name + ' has reported supporting (the app\'s own claim — video codecs in particular may be optimistic). Uncheck any that don\'t actually work well on this device.',
+                        true);
+                }
+
+                setCodecAvailability('noAv1VideoCodecGroup', device.ClaimedVideoCodecs, device.HasReportedProfile);
+                setCodecAvailability('noAv1AudioCodecGroup', device.ClaimedAudioCodecs, device.HasReportedProfile);
+
+                // Log filenames carry no device ID, so this is a best-effort suggestion only
+                // (same app name, closest reported activity time) -- never a confirmed match.
+                var suggestedLog = findSuggestedLog(device);
+                var filterText = device.AppName || '';
+                byId('noAv1LogFilter').value = filterText;
+                renderLogList(filterText, suggestedLog);
+
+                // A device debug log's raw decoder list (when available) is more accurate than
+                // the app's self-reported DeviceProfile above -- particularly for video, where
+                // it can tell hardware-backed support apart from a software-only claim the app
+                // makes no such distinction about. Prefer it whenever a confident match exists,
+                // not just when there's no live/persisted data at all.
+                if (suggestedLog) {
+                    autoApplyFromSuggestedLog(device, suggestedLog);
+                }
+            }
+
+            function autoApplyFromSuggestedLog(device, log) {
+                apiGet('NoAv1/Logs/' + encodeURIComponent(log.FileName)).then(function (result) {
+                    var parsed = parseLogCodecs(result.Content);
+                    if (!parsed) {
+                        return;
+                    }
+
+                    applyParsedCodecs(parsed);
+
+                    var when = log.Timestamp ? new Date(log.Timestamp).toLocaleString() : 'an unknown time';
+                    byId('noAv1DeviceNote').textContent =
+                        'Auto-populated from ' + device.Name + '\'s uploaded debug log (' + when +
+                        '), which is more accurate than the app\'s own claim for video codecs. Review and adjust as needed.';
+                }).catch(function (err) {
+                    // Best-effort convenience only -- leave the manual log picker as the fallback.
+                    console.error('NoAv1Plugin: failed to auto-apply codecs from suggested log', err);
+                });
+            }
+
+            function findSuggestedLog(device) {
+                if (!device || !device.AppName) {
+                    return null;
+                }
+
+                var appName = device.AppName.toLowerCase();
+                var candidates = state.logs.filter(function (log) {
+                    return log.ClientName && log.ClientName.toLowerCase().indexOf(appName) !== -1;
+                });
+
+                if (!candidates.length) {
+                    return null;
+                }
+
+                if (!device.DateLastActivity) {
+                    return candidates[0];
+                }
+
+                var targetTime = new Date(device.DateLastActivity).getTime();
+                var best = null;
+                var bestDelta = Infinity;
+                candidates.forEach(function (log) {
+                    if (!log.Timestamp) {
+                        return;
+                    }
+                    var delta = Math.abs(new Date(log.Timestamp).getTime() - targetTime);
+                    if (delta < bestDelta) {
+                        bestDelta = delta;
+                        best = log;
+                    }
+                });
+
+                return best || candidates[0];
+            }
+
+            function formatLogOptionLabel(log) {
+                var when = log.Timestamp ? new Date(log.Timestamp).toLocaleString() : 'unknown time';
+                var size = log.SizeBytes ? ' (' + Math.round(log.SizeBytes / 1024) + ' KB)' : '';
+                return log.ClientName + ' v' + log.ClientVersion + ' — ' + when + size;
+            }
+
+            function renderLogList(filterText, suggested) {
+                var select = byId('noAv1LogSelect');
+                var filter = (filterText || '').toLowerCase();
+                select.innerHTML = '';
+
+                var filtered = state.logs.filter(function (log) {
+                    if (!filter) {
+                        return true;
+                    }
+                    var haystack = (log.ClientName + ' ' + log.ClientVersion + ' ' + log.FileName).toLowerCase();
+                    return haystack.indexOf(filter) !== -1;
+                });
+
+                filtered.forEach(function (log) {
+                    var opt = document.createElement('option');
+                    opt.value = log.FileName;
+                    var isSuggested = !!(suggested && suggested.FileName === log.FileName);
+                    opt.textContent = (isSuggested ? '★ ' : '') + formatLogOptionLabel(log);
+                    if (isSuggested) {
+                        opt.className = 'noAv1LogSuggested';
+                        opt.selected = true;
+                    }
+                    select.appendChild(opt);
+                });
+
+                if (!filtered.length) {
+                    var empty = document.createElement('option');
+                    empty.value = '';
+                    empty.textContent = filter ? 'No logs match that filter.' : 'No client debug logs uploaded yet.';
+                    empty.disabled = true;
+                    select.appendChild(empty);
+                }
+            }
+
+            // Android clients (e.g. Jellyfin Android TV) log a full MediaCodecList decoder
+            // dump ("**video/avc**", "**audio/mp4a-latm**", ...) when "Send Logs" is used --
+            // that reflects the device's actual OS/hardware decoders, which can disagree with
+            // (and is often more trustworthy than) whatever DeviceProfile the app itself
+            // reported to the server. Prefer it; fall back to a reported DeviceProfile blob
+            // (VideoCodec/AudioCodec/Codec fields) if no decoder dump is found. Other clients'
+            // logs may match neither, in which case there's nothing to suggest.
+            var MIME_TO_VIDEO_CODEC = {
+                'avc': 'h264',
+                'hevc': 'hevc',
+                'av01': 'av1',
+                'x-vnd.on2.vp8': 'vp8',
+                'x-vnd.on2.vp9': 'vp9',
+                'mpeg2': 'mpeg2video',
+                'mp4v-es': 'mpeg4',
+                'wvc1': 'vc1',
+                'vc1': 'vc1'
+            };
+
+            var MIME_TO_AUDIO_CODEC = {
+                'mp4a-latm': 'aac',
+                'mpeg': 'mp3',
+                'ac3': 'ac3',
+                'eac3': 'eac3',
+                'flac': 'flac',
+                'opus': 'opus',
+                'vorbis': 'vorbis',
+                'raw': 'pcm_s16le'
+            };
+
+            function parseLogCodecs(text) {
+                var video = new Set();
+                var audio = new Set();
+                var source = null;
+
+                // Match each decoder block's isHardwareAccelerated flag together with the mime
+                // type it applies to (they're always within ~100 chars of each other in this
+                // dump format). A mime type can appear in multiple decoder entries (e.g. a
+                // vendor hardware one and a generic software fallback) -- OR the flag across
+                // all of them, since we only need one hardware path to exist.
+                var blockRe = /isHardwareAccelerated:\s*(true|false)[\s\S]{0,300}?\*\*(video|audio)\/([a-zA-Z0-9.\-]+)\*\*/g;
+                var videoHasHardwareDecoder = {};
+                var decoderAudioSeen = {};
+                var match;
+                while ((match = blockRe.exec(text)) !== null) {
+                    var subtype = match[3].toLowerCase();
+                    if (match[2] === 'video') {
+                        videoHasHardwareDecoder[subtype] = !!videoHasHardwareDecoder[subtype] || match[1] === 'true';
+                        source = 'decoders';
+                    } else {
+                        decoderAudioSeen[subtype] = true;
+                        source = 'decoders';
+                    }
+                }
+
+                if (source === 'decoders') {
+                    // Only trust video codecs backed by an actual hardware decoder -- a
+                    // software-only path is exactly the "technically works, don't rely on it"
+                    // case this plugin exists to catch.
+                    Object.keys(videoHasHardwareDecoder).forEach(function (subtype) {
+                        if (videoHasHardwareDecoder[subtype] && MIME_TO_VIDEO_CODEC[subtype]) {
+                            video.add(MIME_TO_VIDEO_CODEC[subtype]);
+                        }
+                    });
+                    Object.keys(decoderAudioSeen).forEach(function (subtype) {
+                        if (MIME_TO_AUDIO_CODEC[subtype]) {
+                            audio.add(MIME_TO_AUDIO_CODEC[subtype]);
+                        }
+                    });
+                }
+
+                // Always also look for a reported DeviceProfile embedded in the log (Video/
+                // AudioCodec comma lists, or CodecProfiles entries). For *audio* this is merged
+                // in even when a decoder dump was found: unlike video, software audio decode
+                // isn't a real risk, and formats like AC3/E-AC3 are commonly handled via HDMI
+                // passthrough to a receiver rather than an on-device decoder, so they legitimately
+                // never appear in a MediaCodecList dump at all despite being genuinely supported.
+                // Video stays decoder-dump-only when one was found, to keep the hardware-backed
+                // guarantee that's the whole point of preferring it (see: av1/vc1 below).
+                var profileAudio = new Set();
+                var profileVideo = new Set();
+                var foundProfile = false;
+
+                var listFields = /"(Video|Audio)Codec"\s*:\s*"([^"]*)"/g;
+                while ((match = listFields.exec(text)) !== null) {
+                    var targetSet = match[1] === 'Video' ? profileVideo : profileAudio;
+                    match[2].split(',').forEach(function (codec) {
+                        codec = codec.trim().toLowerCase();
+                        if (codec) {
+                            targetSet.add(codec);
+                            foundProfile = true;
+                        }
+                    });
+                }
+
+                var codecFields = /"Codec"\s*:\s*"([^"]*)"/g;
+                while ((match = codecFields.exec(text)) !== null) {
+                    var codec = match[1].trim().toLowerCase();
+                    if (codec) {
+                        // No Type context in this flat scan -- add to both, the known-codec
+                        // filter below drops whichever list it doesn't actually belong to.
+                        profileVideo.add(codec);
+                        profileAudio.add(codec);
+                        foundProfile = true;
+                    }
+                }
+
+                if (source === 'decoders') {
+                    profileAudio.forEach(function (codec) { audio.add(codec); });
+                } else if (foundProfile) {
+                    profileVideo.forEach(function (codec) { video.add(codec); });
+                    profileAudio.forEach(function (codec) { audio.add(codec); });
+                    source = 'deviceProfile';
+                }
+
+                if (!source) {
+                    return null;
+                }
+
+                // Only keep codecs we actually render as checkboxes -- a codec name found in
+                // the log that isn't one of ours can't be applied to anything.
+                var knownVideo = new Set(state.videoCodecs.map(function (c) { return c.toLowerCase(); }));
+                var knownAudio = new Set(state.audioCodecs.map(function (c) { return c.toLowerCase(); }));
+                var videoResult = Array.from(video).filter(function (c) { return knownVideo.has(c); });
+                var audioResult = Array.from(audio).filter(function (c) { return knownAudio.has(c); });
+
+                if (!videoResult.length && !audioResult.length) {
+                    return null;
+                }
+
+                return { video: videoResult, audio: audioResult, source: source };
+            }
+
+            function applyParsedCodecs(parsed) {
+                [['noAv1VideoCodecGroup', parsed.video], ['noAv1AudioCodecGroup', parsed.audio]].forEach(function (pair) {
+                    var foundSet = new Set(pair[1].map(function (c) { return c.toLowerCase(); }));
+                    var container = byId(pair[0]);
+                    Array.prototype.forEach.call(container.querySelectorAll('.codecOption'), function (wrap) {
+                        var codec = wrap.getAttribute('data-codec');
+                        var input = wrap.querySelector('input');
+                        if (foundSet.has(codec)) {
+                            // The log is direct evidence this codec works, so un-grey it even
+                            // if the device's reported DeviceProfile never claimed it.
+                            input.disabled = false;
+                            wrap.classList.remove('codecUnavailable');
+                            input.checked = true;
+                        } else {
+                            input.checked = false;
+                        }
+                    });
+                });
+            }
+
+            function loadSelectedLog() {
+                var select = byId('noAv1LogSelect');
+                var fileName = select.value;
+                var contentEl = byId('noAv1LogContent');
+
+                hideLogApplySection();
+
+                if (!fileName) {
+                    Dashboard.alert('Select a log from the list first.');
+                    return;
+                }
+
+                Dashboard.showLoadingMsg();
+                apiGet('NoAv1/Logs/' + encodeURIComponent(fileName)).then(function (result) {
+                    contentEl.value = (result.Truncated ? '[log truncated to first ~2MB]\n\n' : '') + result.Content;
+                    contentEl.style.display = 'block';
+                    Dashboard.hideLoadingMsg();
+
+                    var parsed = parseLogCodecs(result.Content);
+                    if (!parsed) {
+                        return;
+                    }
+
+                    var summary = 'This log ' +
+                        (parsed.source === 'decoders' ? 'reports the device\'s actual decoders (video limited to hardware-accelerated ones)' : 'contains a reported device profile') +
+                        ':\n\nVideo: ' + (parsed.video.length ? parsed.video.join(', ') : '(none found)') +
+                        '\nAudio: ' + (parsed.audio.length ? parsed.audio.join(', ') : '(none found)') +
+                        '\n\nApplying replaces the current checkbox selections.';
+
+                    state.pendingLogCodecs = parsed;
+                    byId('noAv1LogApplySummary').textContent = summary;
+                    byId('noAv1LogApplySection').classList.add('noAv1LogApplyReady');
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('NoAv1Plugin: failed to load log content', err);
+                    Dashboard.alert('Failed to load that log file. See browser console for details.');
+                });
+            }
+
+            function hideLogApplySection() {
+                byId('noAv1LogApplySection').classList.remove('noAv1LogApplyReady');
+                byId('noAv1LogApplySummary').textContent = '';
+                state.pendingLogCodecs = null;
+            }
+
+            function applyPendingLogCodecs() {
+                if (!state.pendingLogCodecs) {
+                    return;
+                }
+
+                applyParsedCodecs(state.pendingLogCodecs);
+                closeLogModal();
+            }
+
+            function openLogModal() {
+                byId('noAv1LogModalOverlay').classList.add('noAv1ModalOpen');
+
+                // Re-sync the filter/suggestion with whichever device is currently selected,
+                // same as the auto-fill this did when the section was always visible inline.
+                var deviceId = byId('noAv1DeviceSelect').value;
+                var device = deviceId ? findDevice(deviceId) : null;
+                var suggestedLog = device ? findSuggestedLog(device) : null;
+                var filterText = device && device.AppName ? device.AppName : byId('noAv1LogFilter').value;
+                byId('noAv1LogFilter').value = filterText;
+                renderLogList(filterText, suggestedLog);
+            }
+
+            function closeLogModal() {
+                byId('noAv1LogModalOverlay').classList.remove('noAv1ModalOpen');
+                // Reset so reopening starts fresh rather than showing stale loaded content.
+                byId('noAv1LogContent').value = '';
+                byId('noAv1LogContent').style.display = 'none';
+                hideLogApplySection();
+            }
+
+            function clearForm() {
+                byId('noAv1DeviceSelect').value = '';
+                byId('noAv1AppNameRegex').value = '';
+                byId('noAv1DeviceNameRegex').value = '';
+                byId('noAv1RemoteAddress').value = '';
+                byId('noAv1DeviceNote').textContent = '';
+                resetCodecAvailability();
+                byId('noAv1LogFilter').value = '';
+                byId('noAv1LogContent').value = '';
+                byId('noAv1LogContent').style.display = 'none';
+                renderLogList('', null);
+                // Default a fresh rule to the plugin's original H.264/HEVC + AAC/MP3 behavior.
+                setCheckedCodecs('noAv1VideoCodecGroup', ['h264', 'hevc']);
+                setCheckedCodecs('noAv1AudioCodecGroup', ['aac', 'mp3']);
+                state.editingIndex = -1;
+                byId('noAv1SaveRuleButton').textContent = 'Add rule';
+                byId('noAv1CancelEditButton').style.display = 'none';
+            }
+
+            function summarizeMatch(rule) {
+                var parts = [];
+                if (rule.AppNameRegex) { parts.push('App: /' + rule.AppNameRegex + '/'); }
+                if (rule.DeviceNameRegex) { parts.push('Device name: /' + rule.DeviceNameRegex + '/'); }
+                if (rule.RemoteAddress) { parts.push('Remote: ' + rule.RemoteAddress); }
+                return parts.length ? parts.join('<br />') : '<em>No match criteria set</em>';
+            }
+
+            function renderRulesTable() {
+                var body = byId('noAv1RulesTableBody');
+                body.innerHTML = '';
+
+                (state.config.Rules || []).forEach(function (rule, index) {
+                    var tr = document.createElement('tr');
+
+                    var tdMatch = document.createElement('td');
+                    tdMatch.innerHTML = summarizeMatch(rule);
+                    tr.appendChild(tdMatch);
+
+                    var tdVideo = document.createElement('td');
+                    tdVideo.textContent = (rule.AllowedVideoCodecs || []).join(', ');
+                    tr.appendChild(tdVideo);
+
+                    var tdAudio = document.createElement('td');
+                    tdAudio.textContent = (rule.AllowedAudioCodecs || []).join(', ');
+                    tr.appendChild(tdAudio);
+
+                    var tdButtons = document.createElement('td');
+                    tdButtons.className = 'noAv1RowButtons';
+
+                    var editBtn = document.createElement('button');
+                    editBtn.type = 'button';
+                    editBtn.className = 'raised';
+                    editBtn.textContent = 'Edit';
+                    editBtn.addEventListener('click', function () { editRule(index); });
+
+                    var deleteBtn = document.createElement('button');
+                    deleteBtn.type = 'button';
+                    deleteBtn.className = 'raised';
+                    deleteBtn.textContent = 'Delete';
+                    deleteBtn.addEventListener('click', function () { deleteRule(index); });
+
+                    tdButtons.appendChild(editBtn);
+                    tdButtons.appendChild(deleteBtn);
+                    tr.appendChild(tdButtons);
+
+                    body.appendChild(tr);
+                });
+            }
+
+            function editRule(index) {
+                var rule = state.config.Rules[index];
+                state.editingIndex = index;
+
+                byId('noAv1AppNameRegex').value = rule.AppNameRegex || '';
+                byId('noAv1DeviceNameRegex').value = rule.DeviceNameRegex || '';
+                byId('noAv1RemoteAddress').value = rule.RemoteAddress || '';
+
+                // No DeviceId to look the device back up by anymore -- best-effort: if this
+                // rule's device name regex matches exactly one known device, select it in the
+                // dropdown purely as a convenience (re-picking it isn't required to save).
+                var matchingDevice = null;
+                if (rule.DeviceNameRegex) {
+                    try {
+                        var nameRe = new RegExp(rule.DeviceNameRegex, 'i');
+                        var candidates = state.devices.filter(function (d) { return d.Name && nameRe.test(d.Name); });
+                        if (candidates.length === 1) {
+                            matchingDevice = candidates[0];
+                        }
+                    } catch (e) {
+                        // Not a valid regex (or some other issue) -- just skip the convenience match.
+                    }
+                }
+                byId('noAv1DeviceSelect').value = matchingDevice ? matchingDevice.Id : '';
+
+                if (matchingDevice) {
+                    setCodecAvailability('noAv1VideoCodecGroup', matchingDevice.ClaimedVideoCodecs, matchingDevice.HasReportedProfile);
+                    setCodecAvailability('noAv1AudioCodecGroup', matchingDevice.ClaimedAudioCodecs, matchingDevice.HasReportedProfile);
+                } else {
+                    resetCodecAvailability();
+                }
+
+                setCheckedCodecs('noAv1VideoCodecGroup', rule.AllowedVideoCodecs);
+                setCheckedCodecs('noAv1AudioCodecGroup', rule.AllowedAudioCodecs);
+
+                byId('noAv1SaveRuleButton').textContent = 'Update rule';
+                byId('noAv1CancelEditButton').style.display = '';
+
+                pageEl.querySelector('.noAv1Section').scrollIntoView({ behavior: 'smooth' });
+            }
+
+            function deleteRule(index) {
+                state.config.Rules.splice(index, 1);
+                renderRulesTable();
+                if (state.editingIndex === index) {
+                    clearForm();
+                }
+            }
+
+            function saveRuleFromForm() {
+                var videoCodecs = getCheckedCodecs('noAv1VideoCodecGroup');
+                var audioCodecs = getCheckedCodecs('noAv1AudioCodecGroup');
+
+                var rule = {
+                    AppNameRegex: byId('noAv1AppNameRegex').value.trim() || null,
+                    DeviceNameRegex: byId('noAv1DeviceNameRegex').value.trim() || null,
+                    RemoteAddress: byId('noAv1RemoteAddress').value.trim() || null,
+                    AllowedVideoCodecs: videoCodecs,
+                    AllowedAudioCodecs: audioCodecs
+                };
+
+                if (!rule.AppNameRegex && !rule.DeviceNameRegex && !rule.RemoteAddress) {
+                    Dashboard.alert('Set at least one match criterion (app name pattern, device name pattern, or remote address).');
+                    return;
+                }
+
+                if (!state.config.Rules) {
+                    state.config.Rules = [];
+                }
+
+                if (state.editingIndex >= 0) {
+                    state.config.Rules[state.editingIndex] = rule;
+                } else {
+                    state.config.Rules.push(rule);
+                }
+
+                renderRulesTable();
+                clearForm();
+            }
+
+            function loadPage() {
+                Dashboard.showLoadingMsg();
+
+                Promise.all([
+                    ApiClient.getPluginConfiguration(pluginUniqueId),
+                    apiGet('NoAv1/Codecs'),
+                    apiGet('NoAv1/Devices'),
+                    apiGet('NoAv1/Logs')
+                ]).then(function (results) {
+                    state.config = results[0];
+                    state.videoCodecs = results[1].VideoCodecs || [];
+                    state.audioCodecs = results[1].AudioCodecs || [];
+                    state.devices = results[2] || [];
+                    state.logs = results[3] || [];
+
+                    renderCodecGroup('noAv1VideoCodecGroup', state.videoCodecs, 'video');
+                    renderCodecGroup('noAv1AudioCodecGroup', state.audioCodecs, 'audio');
+                    populateDeviceSelect();
+                    clearForm();
+                    renderRulesTable();
+
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (err) {
+                    Dashboard.hideLoadingMsg();
+                    console.error('NoAv1Plugin: failed to load configuration page data', err);
+                    Dashboard.alert('Failed to load No AV1 plugin configuration. See browser console for details.');
+                });
+            }
+
+            function saveConfig(e) {
+                if (e && e.preventDefault) {
+                    e.preventDefault();
+                }
+
+                Dashboard.showLoadingMsg();
+                ApiClient.updatePluginConfiguration(pluginUniqueId, state.config).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                });
+
+                return false;
+            }
+
+            pageEl.addEventListener('pageshow', loadPage);
+            byId('noAv1DeviceSelect').addEventListener('change', onDeviceSelectChange);
+            byId('noAv1LogFilter').addEventListener('input', function () {
+                renderLogList(this.value, null);
+            });
+            byId('noAv1LoadLogButton').addEventListener('click', loadSelectedLog);
+            byId('noAv1OpenLogModalButton').addEventListener('click', openLogModal);
+            byId('noAv1LogModalCloseButton').addEventListener('click', closeLogModal);
+            byId('noAv1LogModalOverlay').addEventListener('click', function (e) {
+                if (e.target === byId('noAv1LogModalOverlay')) {
+                    closeLogModal();
+                }
+            });
+            byId('noAv1LogApplyButton').addEventListener('click', applyPendingLogCodecs);
+            byId('noAv1LogApplyCancelButton').addEventListener('click', hideLogApplySection);
+            byId('noAv1SaveRuleButton').addEventListener('click', saveRuleFromForm);
+            byId('noAv1CancelEditButton').addEventListener('click', clearForm);
+            byId('NoAv1ConfigForm').addEventListener('submit', saveConfig);
+
+            // In case this page was already visible when the script executed (some dashboard
+            // versions don't re-fire pageshow for the initial load).
+            loadPage();
+        })();
+    </script>
+    </div>
+</body>
+</html>
