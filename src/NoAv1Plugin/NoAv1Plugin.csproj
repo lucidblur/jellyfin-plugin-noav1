@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <AssemblyName>NoAv1Plugin</AssemblyName>
     <!-- plugin.json's "version" (a clean SemVer 2.0 MAJOR.MINOR.PATCH string) is the single

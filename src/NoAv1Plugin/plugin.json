@@ -6,6 +6,6 @@
   "description": "Plugin to apply a DeviceProfile override removing AV1 direct-play for selected devices.",
   "owner": "lucidblur",
   "category": "Server",
-  "targetAbi": "10.11.11",
+  "targetAbi": "12.4.0",
   "assemblies": [ "NoAv1Plugin.dll" ]
 }

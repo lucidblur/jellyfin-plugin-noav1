@@ -8,7 +8,7 @@ set -euo pipefail
 #   ./build/container-build.sh [JELLYFIN_REF]
 #
 # Or set environment variables:
-#   JELLYFIN_REF=10.11.11 ./build/container-build.sh
+#   JELLYFIN_REF=v12.4 ./build/container-build.sh
 #   JELLYFIN_REPO=https://github.com/jellyfin/jellyfin.git ./build/container-build.sh
 #   RUN_TESTS=1 ./build/container-build.sh      # also run tests/NoAv1Plugin.Tests first
 #
@@ -19,12 +19,13 @@ set -euo pipefail
 #  - dotnet publish the plugin from the jellyfin repo root so ProjectReferences resolve
 #
 # Notes:
-#  - Default JELLYFIN_REF is "v10.11.11" (set to "main" to build against latest main branch)
-#  - The container image must have git and dotnet SDK (mcr.microsoft.com/dotnet/sdk:9.0 does)
+#  - Default JELLYFIN_REF is "v12.4" (set to "main" to build against latest main branch)
+#  - The container image must have git and dotnet SDK (mcr.microsoft.com/dotnet/sdk:10.0 does;
+#    Jellyfin 12.x targets .NET 10, so the 9.0 SDK image can no longer build it)
 #  - Running this script requires Podman or Docker. Replace podman with docker if preferred.
 
 # Configuration
-JELLYFIN_REF=${1:-${JELLYFIN_REF:-v10.11.11}}
+JELLYFIN_REF=${1:-${JELLYFIN_REF:-v12.4}}
 JELLYFIN_REPO=${JELLYFIN_REPO:-https://github.com/jellyfin/jellyfin.git}
 OUT_DIR=${OUT_DIR:-out/NoAv1Plugin}
 PLUGIN_SRC_DIR=${PLUGIN_SRC_DIR:-src/NoAv1Plugin}
@@ -41,6 +42,6 @@ podman run --rm \
   -e OUT_DIR="${OUT_DIR}" \
   -e PLUGIN_SRC_DIR="${PLUGIN_SRC_DIR}" \
   -e RUN_TESTS="${RUN_TESTS:-0}" \
-  -v "$(pwd)":/src:z -w /src mcr.microsoft.com/dotnet/sdk:9.0 bash /src/build/container-inner.sh
+  -v "$(pwd)":/src:z -w /src mcr.microsoft.com/dotnet/sdk:10.0 bash /src/build/container-inner.sh
 
 echo "Published output available at: ${OUT_DIR}"

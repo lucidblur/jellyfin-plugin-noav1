@@ -12,7 +12,7 @@
         "version": "1.0.0",
         "sourceUrl": "https://<your-host>/plugins/noav1-1.0.0.zip",
         "checksum": "<md5-hex-of-zip>",
-        "targetAbi": "10.11.11",
+        "targetAbi": "12.4.0",
         "timestamp": "2026-01-01T00:00:00Z",
         "changelog": "Initial release"
       }
