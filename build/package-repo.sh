@@ -9,23 +9,28 @@ set -euo pipefail
 #   ./build/build-container.sh              # build first, if you haven't
 #   ./build/package-repo.sh [BASE_URL]
 #
-# BASE_URL is the address the zip/manifest will be served from (default:
-# http://host.containers.internal:8095, i.e. this host as seen from inside a Podman container,
-# which is how Jellyfin is run here). It must be reachable from wherever the Jellyfin *server*
-# actually runs, not just from this shell: if Jellyfin runs in its own container (e.g. rootless
-# Podman with pasta/slirp4netns networking), "localhost" resolves to the *container's* loopback,
-# not the host's, and fetching the plugin zip fails with "connection refused" (or the repository
-# silently fails to fetch — no error in the UI, the plugin just never appears in the catalog).
-# Override it for other setups:
-#   ./build/package-repo.sh http://localhost:8095                  # Jellyfin running directly on this host
+# BASE_URL is the address the zip/manifest will be served from (default: http://localhost:8095).
+# It must be reachable from wherever the Jellyfin *server* actually runs, not just from this
+# shell: if Jellyfin runs in its own container (e.g. rootless Podman with pasta/slirp4netns
+# networking), "localhost" resolves to the *container's* loopback, not the host's, and the
+# repository will silently fail to fetch (no error in the UI — the plugin just never appears
+# in the catalog). Use:
+#   ./build/package-repo.sh http://host.containers.internal:8095   # Podman
 #   ./build/package-repo.sh http://host.docker.internal:8095       # Docker
 # or the host's LAN IP if neither hostname resolves inside the container. You can check what
 # actually works with: podman exec <container> curl -sf http://host.containers.internal:8095
 
+# TODO: update this to publish to the local git forge instead of a hand-run HTTP server. Once
+# this repo is hosted on the forge, upload the zip as a release asset (or to its package
+# registry) and point BASE_URL / the manifest's sourceUrl at that forge URL, so Jellyfin's
+# "local" repository fetches from the forge and build/serve-repo.sh no longer has to be running
+# to install or update the plugin. The forge URL must also be reachable from inside Jellyfin's
+# container (see the BASE_URL notes above).
+
 OUT_DIR=${OUT_DIR:-out/NoAv1Plugin}
 REPO_DIR=${REPO_DIR:-repo}
 PLUGIN_JSON=${PLUGIN_JSON:-src/NoAv1Plugin/plugin.json}
-BASE_URL=${1:-${BASE_URL:-http://host.containers.internal:8095}}
+BASE_URL=${1:-${BASE_URL:-http://localhost:8095}}
 
 if [ ! -f "${OUT_DIR}/NoAv1Plugin.dll" ]; then
   echo "ERROR: ${OUT_DIR}/NoAv1Plugin.dll not found. Run ./build/container-build.sh first." >&2
