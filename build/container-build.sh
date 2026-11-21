@@ -10,6 +10,7 @@ set -euo pipefail
 # Or set environment variables:
 #   JELLYFIN_REF=10.11.11 ./build/container-build.sh
 #   JELLYFIN_REPO=https://github.com/jellyfin/jellyfin.git ./build/container-build.sh
+#   RUN_TESTS=1 ./build/container-build.sh      # also run tests/NoAv1Plugin.Tests first
 #
 # The script mounts the current repository into the container at /src and performs:
 #  - git submodule update --init --recursive (if .gitmodules present)
@@ -39,6 +40,7 @@ podman run --rm \
   -e JELLYFIN_REPO="${JELLYFIN_REPO}" \
   -e OUT_DIR="${OUT_DIR}" \
   -e PLUGIN_SRC_DIR="${PLUGIN_SRC_DIR}" \
+  -e RUN_TESTS="${RUN_TESTS:-0}" \
   -v "$(pwd)":/src:z -w /src mcr.microsoft.com/dotnet/sdk:9.0 bash /src/build/container-inner.sh
 
 echo "Published output available at: ${OUT_DIR}"

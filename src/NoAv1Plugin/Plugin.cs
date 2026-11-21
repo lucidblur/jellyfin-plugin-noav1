@@ -41,8 +41,33 @@ namespace NoAv1Plugin
             _deviceManager = deviceManager;
             _logger = logger;
 
+            NormalizeLoadedConfiguration();
+
             // Subscribe to session started events
             _sessionManager.SessionStarted += OnSessionStarted;
+        }
+
+        /// <summary>
+        /// Loads the saved configuration and strips duplicate rule codecs left behind by older
+        /// versions (see <see cref="PluginConfiguration.DeduplicateRuleCodecs"/>), saving only if
+        /// anything changed. BasePlugin's LoadConfiguration is private and non-virtual, so this
+        /// runs from the constructor instead; reading <see cref="BasePlugin{T}.Configuration"/>
+        /// here is what triggers the (otherwise lazy) load.
+        /// </summary>
+        private void NormalizeLoadedConfiguration()
+        {
+            try
+            {
+                if (Configuration.DeduplicateRuleCodecs())
+                {
+                    SaveConfiguration();
+                    _logger?.LogInformation("NoAv1Plugin: removed duplicate codec entries from saved rules");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "NoAv1Plugin: failed to normalize saved configuration");
+            }
         }
 
         public IEnumerable<PluginPageInfo> GetPages()

@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # Runs inside the dotnet SDK container (mounted at /src) via container-build.sh.
-# Expects JELLYFIN_REF, JELLYFIN_REPO, OUT_DIR, PLUGIN_SRC_DIR in the environment.
+# Expects JELLYFIN_REF, JELLYFIN_REPO, OUT_DIR, PLUGIN_SRC_DIR in the environment
+# (and optionally RUN_TESTS=1).
 
 cd /src
 
@@ -49,6 +50,17 @@ DOTNET_PROJECT_PATH="jellyfin/src/Plugins/NoAv1Plugin/NoAv1Plugin.csproj"
 if [ ! -f "${DOTNET_PROJECT_PATH}" ]; then
   echo 'ERROR: Project not found at' "${DOTNET_PROJECT_PATH}" >&2
   exit 2
+fi
+
+# Optional: RUN_TESTS=1 also builds and runs the unit tests (tests/NoAv1Plugin.Tests), copied
+# next to the plugin so its ../NoAv1Plugin ProjectReference and Jellyfin's central package
+# versions resolve. A test failure aborts the build before anything is published.
+if [ "${RUN_TESTS:-0}" = "1" ]; then
+  TESTS_TARGET_DIR="jellyfin/src/Plugins/NoAv1Plugin.Tests"
+  mkdir -p "${TESTS_TARGET_DIR}"
+  tar -C /src/tests/NoAv1Plugin.Tests -c . | tar -C "${TESTS_TARGET_DIR}" -xf -
+  echo 'Running dotnet test...'
+  dotnet test "${TESTS_TARGET_DIR}/NoAv1Plugin.Tests.csproj" -c Release
 fi
 
 echo 'Running dotnet publish...'

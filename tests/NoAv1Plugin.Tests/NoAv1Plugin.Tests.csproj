@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Like the plugin itself, this is built from within the Jellyfin source tree (see
+       build/container-inner.sh with RUN_TESTS=1): it's copied next to the plugin under
+       jellyfin/src/Plugins/, so the plugin ProjectReference below resolves, and package
+       versions come from Jellyfin's central Directory.Packages.props. -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../NoAv1Plugin/NoAv1Plugin.csproj" />
+  </ItemGroup>
+</Project>
