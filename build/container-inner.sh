@@ -35,6 +35,18 @@ fi
 
 # Ensure plugin folder exists in jellyfin source tree and copy plugin source there
 PLUGIN_TARGET_DIR="jellyfin/src/Plugins/NoAv1Plugin"
+
+# The plugin (and test) sources are only copied into the jellyfin checkout so their relative
+# ProjectReferences resolve; they don't belong to it. Remove them again when this script exits
+# (success or failure) so the submodule isn't left with untracked content -- and also up front,
+# so a file deleted from this repo can't linger in a stale copy from an earlier build.
+cleanup_plugin_copies() {
+  rm -rf /src/jellyfin/src/Plugins/NoAv1Plugin /src/jellyfin/src/Plugins/NoAv1Plugin.Tests
+  rmdir /src/jellyfin/src/Plugins 2>/dev/null || true
+}
+cleanup_plugin_copies
+trap cleanup_plugin_copies EXIT
+
 mkdir -p "${PLUGIN_TARGET_DIR}"
 
 # Use tar to copy plugin source into the jellyfin checkout (avoids rsync dependency)
